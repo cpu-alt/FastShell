@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 <p align="center"><img src="docs/logo.png" width="128" alt="EMF Hexa"></p>
 
 # EMF Hexa
@@ -227,8 +226,3 @@ tests/         41 tests GoogleTest et un benchmark
 
 Apache-2.0, comme les composants d'origine. Basé sur le code de WindTerm (© 2020 WindTerm) et
 sur ptyqt pour la partie pty.
-=======
-# FastShell
-
-Dépôt public de FastShell.
->>>>>>> cd076a17ff53eaf8297b7dbcfc548724260962c2
