@@ -1,4 +1,4 @@
-// Copyright 2026 EMF Hexa contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #include "app/RdpView.h"
 
 #include <QDir>
@@ -277,7 +277,7 @@ void RdpView::openExternally() {
 #ifdef Q_OS_WIN
     // A small .rdp file carries host, port and user; mstsc asks for the password.
     const QString dir = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    const QString file = dir + QStringLiteral("/emfhexa-") + QUuid::createUuid().toString(QUuid::WithoutBraces).left(8)
+    const QString file = dir + QStringLiteral("/fastshell-") + QUuid::createUuid().toString(QUuid::WithoutBraces).left(8)
                        + QStringLiteral(".rdp");
     QFile f(file);
     if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {

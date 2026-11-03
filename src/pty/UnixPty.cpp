@@ -81,7 +81,7 @@ void UnixPty::start(int rows, int columns) {
         close(m_master);
         setenv("TERM", "xterm-256color", 1);
         setenv("COLORTERM", "truecolor", 1);
-        setenv("TERM_PROGRAM", "EMFHexa", 1);
+        setenv("TERM_PROGRAM", "FastShell", 1);
         for (QByteArray &e : extraEnv) {
             putenv(e.data());
         }

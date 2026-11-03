@@ -5,8 +5,10 @@ add_executable(wtng_tests
     test_telnet.cpp
     test_screen.cpp
     test_serial.cpp
+    test_ssh_login.cpp
     bench_parser.cpp)
-target_link_libraries(wtng_tests PRIVATE wtterminal wtbackends GTest::gtest GTest::gtest_main)
+target_link_libraries(wtng_tests PRIVATE wtterminal wtbackends ssh GTest::gtest GTest::gtest_main)
+target_include_directories(wtng_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
 include(GoogleTest)
 gtest_discover_tests(wtng_tests DISCOVERY_MODE PRE_TEST)

@@ -20,6 +20,7 @@ struct SessionInfo {
     QString folder;  // "Servers/Prod" style path; empty = root
     Type type = Type::Ssh;
     QColor color;
+    QString os;  // system shown as an icon: "ubuntu", "windows-server"... (see icons::systems())
 
     // Local shell
     QString program;

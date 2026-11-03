@@ -88,6 +88,10 @@ private:
     QAction *m_broadcastAction = nullptr;
     QLabel *m_statusBroadcast = nullptr;
     QAction *m_lineNumbersAction = nullptr;
+    QAction *m_zoomInAction = nullptr;
+    QAction *m_zoomOutAction = nullptr;
+    QAction *m_fontAction = nullptr;
+    QAction *m_fullScreenAction = nullptr;
     bool m_showTimestamps = true;
     bool m_showLineNumbers = true;
 

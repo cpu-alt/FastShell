@@ -82,7 +82,7 @@ std::function<std::optional<QString>(const QString &, bool)> askIn(QPointer<QWid
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), m_store(new SessionStore(this)), m_tabs(new QTabWidget(this)) {
-    setWindowTitle(QStringLiteral("EMF Hexa"));
+    setWindowTitle(QStringLiteral("FastShell"));
     setWindowIcon(logo::icon());
     setDockNestingEnabled(true);
 
@@ -124,9 +124,9 @@ MainWindow::MainWindow(QWidget *parent)
             view->setFocus();
         }
         if (m_tabs->count() > 0) {
-            setWindowTitle(m_tabs->tabText(m_tabs->currentIndex()) + QStringLiteral(" - EMF Hexa"));
+            setWindowTitle(m_tabs->tabText(m_tabs->currentIndex()) + QStringLiteral(" - FastShell"));
         } else {
-            setWindowTitle(QStringLiteral("EMF Hexa"));
+            setWindowTitle(QStringLiteral("FastShell"));
         }
         updatePanels();
         updateStatus();
@@ -268,9 +268,9 @@ void MainWindow::createMenus() {
             QSettings().setValue(QStringLiteral("view/font"), v->terminalFont().toString());
         }
     };
-    add(view, tr("Zoom in"), QKeySequence(Qt::CTRL | Qt::Key_Equal), [zoom] { zoom(1); });
-    add(view, tr("Zoom out"), QKeySequence(Qt::CTRL | Qt::Key_Minus), [zoom] { zoom(-1); });
-    add(view, tr("Font..."), QKeySequence(), [this] {
+    m_zoomInAction = add(view, tr("Zoom in"), QKeySequence(Qt::CTRL | Qt::Key_Equal), [zoom] { zoom(1); });
+    m_zoomOutAction = add(view, tr("Zoom out"), QKeySequence(Qt::CTRL | Qt::Key_Minus), [zoom] { zoom(-1); });
+    m_fontAction = add(view, tr("Font..."), QKeySequence(), [this] {
         TerminalView *v = current();
         bool ok = false;
         const QFont font = QFontDialog::getFont(&ok, v ? v->terminalFont() : QFont(), this, tr("Terminal font"),
@@ -307,7 +307,7 @@ void MainWindow::createMenus() {
     }
     view->addAction(m_quickCommands->toggleViewAction());
     view->addSeparator();
-    add(view, tr("Full screen"), QKeySequence(Qt::ALT | Qt::Key_Return), [this] {
+    m_fullScreenAction = add(view, tr("Full screen"), QKeySequence(Qt::ALT | Qt::Key_Return), [this] {
         isFullScreen() ? showNormal() : showFullScreen();
     });
 
@@ -315,11 +315,12 @@ void MainWindow::createMenus() {
     help->addAction(tr("Sessions file location"), this, [this] {
         QMessageBox::information(this, tr("Sessions"), m_store->filePath());
     });
-    help->addAction(tr("About EMF Hexa"), this, [this] {
+    help->addAction(tr("About FastShell"), this, [this] {
         QMessageBox box(this);
-        box.setWindowTitle(tr("About EMF Hexa"));
+        box.setWindowTitle(tr("About FastShell"));
         box.setIconPixmap(logo::pixmap(96));
-        box.setText(tr("<h3>EMF Hexa %1</h3><p>SSH, Telnet, serial and local terminal by EMF NET.</p>"
+        box.setText(tr("<h3>FastShell %1</h3><p>SSH, Telnet, serial, remote desktop and local terminal.</p>"
+                       "<p><b>Credits:</b> Nathan Witz &amp; Patrizio Ventura</p>"
                        "<p>Built on the open-source WindTerm components (Apache-2.0).<br>Qt %2, libssh.</p>")
                         .arg(QApplication::applicationVersion(), QString::fromLatin1(qVersion())));
         box.exec();
@@ -357,6 +358,29 @@ void MainWindow::createToolBar() {
     action(style::Glyph::SplitDown, tr("Split down (Ctrl+Shift+O)"), [this] { splitCurrent(Qt::Vertical); });
     m_broadcastAction->setIcon(style::icon(style::Glyph::Broadcast));
     bar->addAction(m_broadcastAction);
+
+    // View: the same actions as the View menu, one click away.
+    bar->addSeparator();
+    auto viewAction = [bar](QAction *a, style::Glyph glyph, const QString &tip) {
+        a->setIcon(style::icon(glyph));
+        a->setToolTip(tip);
+        bar->addAction(a);
+    };
+    viewAction(m_zoomOutAction, style::Glyph::ZoomOut, tr("Zoom out (Ctrl+-)"));
+    viewAction(m_zoomInAction, style::Glyph::ZoomIn, tr("Zoom in (Ctrl+=)"));
+    viewAction(m_fontAction, style::Glyph::Font, tr("Terminal font"));
+    viewAction(m_timestampsAction, style::Glyph::Clock, tr("Show or hide the time of each line"));
+    viewAction(m_lineNumbersAction, style::Glyph::LineNumbers, tr("Show or hide line numbers"));
+    bar->addSeparator();
+    const std::pair<const char *, style::Glyph> panels[] = {{"sessionDock", style::Glyph::SessionList},
+                                                            {"filerDock", style::Glyph::Filer},
+                                                            {"outlineDock", style::Glyph::Outline}};
+    for (const auto &[name, glyph] : panels) {
+        if (auto *dock = findChild<QDockWidget *>(QLatin1String(name))) {
+            viewAction(dock->toggleViewAction(), glyph, tr("Show or hide the %1 panel").arg(dock->windowTitle()));
+        }
+    }
+    viewAction(m_fullScreenAction, style::Glyph::FullScreen, tr("Full screen (Alt+Enter)"));
 
     auto *spacer = new QWidget(bar);
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
@@ -500,9 +524,13 @@ TerminalView *MainWindow::createView(const SessionInfo &session, const QString &
         break;
     case SessionInfo::Type::Ssh: {
         // A shared user replaces the session's own login fields.
-        SshOptions options{session.host, session.port, session.user,
-                           password.isEmpty() ? session.password() : password, session.identityFile,
-                           session.legacyAlgorithms};
+        SshOptions options;
+        options.host = session.host;
+        options.port = session.port;
+        options.user = session.user;
+        options.password = password.isEmpty() ? session.password() : password;
+        options.identityFile = session.identityFile;
+        options.legacyAlgorithms = session.legacyAlgorithms;
         if (const Credential *c = m_store->findCredential(session.credentialId)) {
             options.user = c->user;
             options.password = password.isEmpty() ? c->password() : password;
@@ -569,7 +597,7 @@ void MainWindow::refreshTabTitle(TabPage *page) {
     m_tabs->setTabIcon(index, icons::session(s));
     m_tabs->tabBar()->setTabTextColor(index, s.color.isValid() ? s.color : QColor());
     if (index == m_tabs->currentIndex()) {
-        setWindowTitle(text + QStringLiteral(" - EMF Hexa"));
+        setWindowTitle(text + QStringLiteral(" - FastShell"));
     }
 }
 

@@ -101,6 +101,15 @@ std::optional<QString> SshPrompter::askOnGui(const QString &prompt, bool secret)
     return answer ? *answer : std::nullopt;
 }
 
+std::optional<QString> SshPrompter::askLogin(const QString &prompt, bool secret) const {
+    if (askInTerminal) return askInTerminal(prompt, secret);
+    return askOnGui(prompt.trimmed(), secret);
+}
+
+void SshPrompter::notice(const QString &text) const {
+    if (showInTerminal) showInTerminal(text);
+}
+
 SshConnectResult sshConnect(const SshOptions &options, const SshPrompter &prompter) {
     SshConnectResult result;
     SshSessionPtr session(ssh_new());
@@ -110,16 +119,16 @@ SshConnectResult sshConnect(const SshOptions &options, const SshPrompter &prompt
     }
     ssh_session s = session.get();
 
+    // Like PuTTY: only what the session says. ~/.ssh/config is not read, so
+    // it cannot bring a user name or keys of its own.
     const QByteArray host = options.host.toUtf8();
-    const QByteArray user = options.user.toUtf8();
     auto configure = [&](ssh_session target, LegacyLevel legacy) {
         int port = options.port;
         ssh_options_set(target, SSH_OPTIONS_HOST, host.constData());
         ssh_options_set(target, SSH_OPTIONS_PORT, &port);
-        if (!user.isEmpty()) {
-            ssh_options_set(target, SSH_OPTIONS_USER, user.constData());
+        if (!options.knownHostsFile.isEmpty()) {
+            ssh_options_set(target, SSH_OPTIONS_KNOWNHOSTS, options.knownHostsFile.toLocal8Bit().constData());
         }
-        ssh_options_parse_config(target, nullptr);  // honour ~/.ssh/config
         applyLegacyAlgorithms(target, legacy);
     };
 
@@ -175,68 +184,92 @@ SshConnectResult sshConnect(const SshOptions &options, const SshPrompter &prompt
         return result;
     }
 
+    // --- user name -----------------------------------------------------------
+    // No user in the session: ask for it in the terminal, like PuTTY.
+    QString userName = options.user;
+    while (userName.trimmed().isEmpty()) {
+        const std::optional<QString> typed = prompter.askLogin(tr("login as: "), false);
+        if (!typed) return result;  // cancelled
+        userName = typed->trimmed();
+    }
+    result.user = userName;
+    ssh_options_set(s, SSH_OPTIONS_USER, userName.toUtf8().constData());
+
     // --- authentication ----------------------------------------------------
+    // Only the key set in the session (or its shared user) is ever used: no
+    // agent, no ~/.ssh default keys. Otherwise: password, typed in the terminal.
     int rc = ssh_userauth_none(s, nullptr);
     const int methods = ssh_userauth_list(s, nullptr);
+    auto stopping = [&prompter] { return prompter.stop && *prompter.stop; };
 
-    if (rc != SSH_AUTH_SUCCESS && (methods & SSH_AUTH_METHOD_PUBLICKEY)) {
-        if (!options.identityFile.isEmpty()) {
-            ssh_key key = nullptr;
-            const QByteArray path = options.identityFile.toLocal8Bit();
-            if (ssh_pki_import_privkey_file(path.constData(), nullptr, nullptr, nullptr, &key) != SSH_OK) {
-                if (auto phrase = prompter.askOnGui(tr("Passphrase for %1:").arg(options.identityFile), true)) {
-                    ssh_pki_import_privkey_file(path.constData(), phrase->toUtf8().constData(), nullptr, nullptr, &key);
-                }
-            }
-            if (key) {
-                rc = ssh_userauth_publickey(s, nullptr, key);
-                ssh_key_free(key);
+    if (rc != SSH_AUTH_SUCCESS && (methods & SSH_AUTH_METHOD_PUBLICKEY) && !options.identityFile.isEmpty()) {
+        ssh_key key = nullptr;
+        const QByteArray path = options.identityFile.toLocal8Bit();
+        if (ssh_pki_import_privkey_file(path.constData(), nullptr, nullptr, nullptr, &key) != SSH_OK) {
+            if (auto phrase = prompter.askOnGui(tr("Passphrase for %1:").arg(options.identityFile), true)) {
+                ssh_pki_import_privkey_file(path.constData(), phrase->toUtf8().constData(), nullptr, nullptr, &key);
             }
         }
-        if (rc != SSH_AUTH_SUCCESS) {
-            rc = ssh_userauth_publickey_auto(s, nullptr, nullptr);  // agent + default keys
+        if (key) {
+            rc = ssh_userauth_publickey(s, nullptr, key);
+            ssh_key_free(key);
         }
     }
+
+    // The saved password is tried once, then up to 3 typed ones.
+    constexpr int MaxTypedPasswords = 3;
+    int typed = 0;
+    bool savedTried = options.password.isEmpty();
+    auto nextPassword = [&](const QString &prompt) -> std::optional<QString> {
+        if (!savedTried) {
+            savedTried = true;
+            return options.password;
+        }
+        ++typed;
+        return prompter.askLogin(prompt, true);
+    };
+    const QString accessDenied = tr("Access denied");
 
     if (rc != SSH_AUTH_SUCCESS && (methods & SSH_AUTH_METHOD_INTERACTIVE)) {
-        rc = ssh_userauth_kbdint(s, nullptr, nullptr);
-        while (rc == SSH_AUTH_INFO && !(prompter.stop && *prompter.stop)) {
-            const int prompts = ssh_userauth_kbdint_getnprompts(s);
-            for (int i = 0; i < prompts; ++i) {
-                char echo = 0;
-                const QString prompt = QString::fromUtf8(ssh_userauth_kbdint_getprompt(s, i, &echo));
-                std::optional<QString> answer;
-                if (!options.password.isEmpty() && !echo && prompts == 1) {
-                    answer = options.password;
-                } else {
-                    answer = prompter.askOnGui(prompt, !echo);
-                }
-                if (!answer) {
-                    return result;  // cancelled
-                }
-                if (!echo) result.password = *answer;
-                ssh_userauth_kbdint_setanswer(s, i, answer->toUtf8().constData());
-            }
+        while (rc != SSH_AUTH_SUCCESS && typed < MaxTypedPasswords && !stopping()) {
+            bool answered = false;
             rc = ssh_userauth_kbdint(s, nullptr, nullptr);
+            while (rc == SSH_AUTH_INFO && !stopping()) {
+                const int prompts = ssh_userauth_kbdint_getnprompts(s);
+                for (int i = 0; i < prompts; ++i) {
+                    char echo = 0;
+                    QString prompt = QString::fromUtf8(ssh_userauth_kbdint_getprompt(s, i, &echo));
+                    if (!prompt.endsWith(QLatin1Char(' '))) prompt += QLatin1Char(' ');
+                    const std::optional<QString> answer = echo ? prompter.askLogin(prompt, false) : nextPassword(prompt);
+                    if (!answer) return result;  // cancelled
+                    answered = true;
+                    if (!echo) result.password = *answer;
+                    ssh_userauth_kbdint_setanswer(s, i, answer->toUtf8().constData());
+                }
+                rc = ssh_userauth_kbdint(s, nullptr, nullptr);
+            }
+            if (rc == SSH_AUTH_SUCCESS || rc == SSH_AUTH_ERROR || !answered) break;
+            prompter.notice(accessDenied);
         }
     }
 
-    for (int attempt = 0; rc != SSH_AUTH_SUCCESS && (methods & SSH_AUTH_METHOD_PASSWORD) && attempt < 3; ++attempt) {
-        std::optional<QString> password;
-        if (attempt == 0 && !options.password.isEmpty()) {
-            password = options.password;
-        } else {
-            password = prompter.askOnGui(tr("Password for %1:").arg(options.displayName()), true);
-        }
-        if (!password) {
-            return result;  // cancelled
-        }
+    const QString passwordPrompt = tr("%1@%2's password: ").arg(userName, options.host);
+    while (rc != SSH_AUTH_SUCCESS && rc != SSH_AUTH_ERROR && (methods & SSH_AUTH_METHOD_PASSWORD)
+           && typed < MaxTypedPasswords && !stopping()) {
+        const std::optional<QString> password = nextPassword(passwordPrompt);
+        if (!password) return result;  // cancelled
         rc = ssh_userauth_password(s, nullptr, password->toUtf8().constData());
         result.password = *password;
+        if (rc == SSH_AUTH_DENIED) prompter.notice(accessDenied);
     }
 
     if (rc != SSH_AUTH_SUCCESS) {
-        result.error = tr("Authentication failed: %1").arg(lastError(s));
+        if (!(methods & (SSH_AUTH_METHOD_PASSWORD | SSH_AUTH_METHOD_INTERACTIVE)) && options.identityFile.isEmpty()) {
+            result.error = tr("Authentication failed: %1 only accepts keys. Choose a private key in the session.")
+                               .arg(options.host);
+        } else {
+            result.error = tr("Authentication failed for %1@%2.").arg(userName, options.host);
+        }
         return result;
     }
     result.session = std::move(session);

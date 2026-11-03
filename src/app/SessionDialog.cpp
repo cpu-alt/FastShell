@@ -1,4 +1,4 @@
-// Copyright 2026 EMF Hexa contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #include "app/SessionDialog.h"
 
 #include <QCheckBox>
@@ -17,6 +17,7 @@
 #include <QSerialPortInfo>
 #include <QSpinBox>
 
+#include "app/Icons.h"
 #include "app/ManageDialogs.h"
 
 namespace {
@@ -71,6 +72,15 @@ SessionDialog::SessionDialog(SessionStore *store, QWidget *parent) : QDialog(par
         fillProfiles(current);
     });
 
+    // System mark shown next to the session.
+    m_os = new QComboBox(this);
+    m_os->addItem(tr("None"), QString());
+    for (const icons::System &system : icons::systems()) {
+        m_os->addItem(icons::system(QLatin1String(system.id)), tr(system.label), QLatin1String(system.id));
+    }
+    m_os->setIconSize(QSize(18, 18));
+    m_os->setMaxVisibleItems(20);
+
     // Remote
     m_host = new QLineEdit(this);
     m_host->setPlaceholderText(tr("host, or user@host"));
@@ -89,13 +99,12 @@ SessionDialog::SessionDialog(SessionStore *store, QWidget *parent) : QDialog(par
     });
 
     m_user = new QLineEdit(this);
-    m_user->setPlaceholderText(tr("default: current user"));
     m_password = new QLineEdit(this);
     m_password->setEchoMode(QLineEdit::Password);
-    m_password->setPlaceholderText(tr("optional, asked when needed"));
+    m_password->setPlaceholderText(tr("optional, asked in the terminal"));
     m_savePasswordBox = new QCheckBox(tr("Remember password (encrypted for your Windows account)"), this);
     m_identity = new QLineEdit(this);
-    m_identity->setPlaceholderText(tr("optional, agent and ~/.ssh keys are tried"));
+    m_identity->setPlaceholderText(tr("optional; no key is used unless chosen here"));
     auto *browseKey = new QPushButton(tr("Browse..."), this);
     m_identityRow = rowWith(this, m_identity, browseKey);
     connect(browseKey, &QPushButton::clicked, this, [this] {
@@ -160,6 +169,7 @@ SessionDialog::SessionDialog(SessionStore *store, QWidget *parent) : QDialog(par
     m_form = new QFormLayout(this);
     m_form->addRow(tr("Type"), m_type);
     m_form->addRow(tr("Device"), m_profileRow);
+    m_form->addRow(tr("System"), m_os);
     m_form->addRow(tr("Name"), m_name);
     m_form->addRow(tr("Folder"), m_folder);
     m_form->addRow(tr("Host"), m_host);
@@ -259,13 +269,14 @@ void SessionDialog::updateVisibility() {
     const bool sharedUser = login && !m_credential->currentData().toString().isEmpty();
 
     m_form->setRowVisible(m_profileRow, !local && !rdp);
+    m_form->setRowVisible(m_os, !local);
     m_form->setRowVisible(m_host, remote);
     m_form->setRowVisible(m_port, remote);
     m_form->setRowVisible(m_credentialRow, login);
     m_form->setRowVisible(m_user, login && !sharedUser);
     m_form->setRowVisible(m_password, login && !sharedUser);
     m_form->setRowVisible(m_savePasswordBox, login && !sharedUser);
-    m_user->setPlaceholderText(rdp ? tr("user or DOMAIN\\user") : tr("default: current user"));
+    m_user->setPlaceholderText(rdp ? tr("user or DOMAIN\\user") : tr("optional, asked in the terminal (login as:)"));
     m_form->setRowVisible(m_identityRow, ssh && !sharedUser);
     m_form->setRowVisible(m_legacyBox, ssh);
     m_form->setRowVisible(m_programRow, local);
@@ -291,11 +302,12 @@ void SessionDialog::setSession(const SessionInfo &s) {
                                                                   : SerialIndex);
     fillProfiles(s.profileId);
     fillUsers(s.credentialId);
+    serialui::selectData(m_os, s.os);
     m_host->setText(s.host);
     m_port->setValue(s.port);
     m_user->setText(s.user);
     m_keptPassword = s.protectedPassword;
-    m_password->setPlaceholderText(s.protectedPassword.isEmpty() ? tr("optional, asked when needed")
+    m_password->setPlaceholderText(s.protectedPassword.isEmpty() ? tr("optional, asked in the terminal")
                                                                  : tr("saved (leave empty to keep)"));
     m_savePasswordBox->setChecked(!s.protectedPassword.isEmpty());
     m_identity->setText(s.identityFile);
@@ -377,6 +389,7 @@ SessionInfo SessionDialog::session() const {
     s.sendCrLf = m_crlfBox->isChecked();
     s.backspaceCtrlH = s.type == SessionInfo::Type::Serial && m_backspaceBox->isChecked();
     s.color = m_color;
+    s.os = s.type == SessionInfo::Type::Local ? QString() : m_os->currentData().toString();
 
     s.name = m_name->text().trimmed();
     if (s.name.isEmpty()) {

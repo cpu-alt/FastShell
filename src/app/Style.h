@@ -1,4 +1,4 @@
-// Copyright 2026 EMF Hexa contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // The application look: dark palette, style sheet, fonts, line icons for the
 // toolbar, and the Windows title bar matched to the app (dark, rounded).
@@ -26,7 +26,10 @@ inline const QColor TerminalBackground(0x1B, 0x1D, 0x23);  // same as Theme::bac
 void apply(QApplication &app);
 
 // Line icons drawn at runtime for the toolbar.
-enum class Glyph { NewSession, Terminal, SplitRight, SplitDown, Broadcast, RemoteDesktop, Panels, Close };
+enum class Glyph {
+    NewSession, Terminal, SplitRight, SplitDown, Broadcast, RemoteDesktop, Panels, Close,
+    ZoomIn, ZoomOut, Font, Clock, LineNumbers, SessionList, Filer, Outline, FullScreen,
+};
 QIcon icon(Glyph glyph);
 
 }  // namespace style

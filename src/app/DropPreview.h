@@ -1,4 +1,4 @@
-// Copyright 2026 EMF Hexa contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // Translucent "snap" preview shown while a pane or a session is dragged over
 // a tab: like Windows Snap, it outlines where the pane will land and glides

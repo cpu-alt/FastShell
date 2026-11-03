@@ -395,9 +395,9 @@ void SessionPanel::exportFolder(const QString &folder) {
                       : users->isChecked()     ? SessionStore::ExportLogins::UsersOnly
                                                : SessionStore::ExportLogins::UsersAndPasswords;
     const QString suggested = QDir::home().filePath(
-        (folder.isEmpty() ? QStringLiteral("sessions") : folder.section(QLatin1Char('/'), -1)) + QStringLiteral(".emfhexa"));
+        (folder.isEmpty() ? QStringLiteral("sessions") : folder.section(QLatin1Char('/'), -1)) + QStringLiteral(".fastshell"));
     const QString file = QFileDialog::getSaveFileName(this, dialog.windowTitle(), suggested,
-                                                      tr("EMF Hexa sessions (*.emfhexa);;JSON (*.json)"));
+                                                      tr("FastShell sessions (*.fastshell);;JSON (*.json)"));
     if (file.isEmpty()) return;
     QSaveFile out(file);
     if (!out.open(QIODevice::WriteOnly)) {
@@ -416,7 +416,7 @@ void SessionPanel::exportFolder(const QString &folder) {
 
 void SessionPanel::importInto(const QString &folder) {
     const QString file = QFileDialog::getOpenFileName(this, tr("Import sessions"), QDir::homePath(),
-                                                      tr("EMF Hexa sessions (*.emfhexa *.json);;All files (*)"));
+                                                      tr("FastShell sessions (*.fastshell *.emfhexa *.json);;All files (*)"));
     if (file.isEmpty()) return;
     QFile in(file);
     if (!in.open(QIODevice::ReadOnly)) {
@@ -466,6 +466,26 @@ void SessionPanel::showMenu(const QPoint &pos) {
     const bool builtin = key.startsWith(QLatin1String("builtin:"));
     const QList<SessionInfo> selection = selectedSessions();
     QMenu menu(this);
+    // "System" sub-menu: the icon shown next to the sessions (Ubuntu, Windows Server...).
+    auto addSystemMenu = [this, &menu](const QList<SessionInfo> &targets, const QString &current) {
+        QMenu *systemMenu = menu.addMenu(tr("System"));
+        auto setSystem = [this, targets](const QString &os) {
+            for (SessionInfo s : targets) {
+                if (s.builtin || s.type == SessionInfo::Type::Local) continue;
+                s.os = os;
+                m_store->upsert(s);
+            }
+        };
+        QAction *none = systemMenu->addAction(tr("None"), this, [setSystem] { setSystem(QString()); });
+        none->setCheckable(true);
+        none->setChecked(current.isEmpty());
+        for (const icons::System &system : icons::systems()) {
+            const QString id = QLatin1String(system.id);
+            QAction *a = systemMenu->addAction(icons::system(id), tr(system.label), this, [setSystem, id] { setSystem(id); });
+            a->setCheckable(true);
+            a->setChecked(id == current);
+        }
+    };
 
     if (kind == SessionItem && selection.size() > 1) {
         // Several sessions selected: open them together.
@@ -489,6 +509,7 @@ void SessionPanel::showMenu(const QPoint &pos) {
             dot.fill(p.color.isValid() ? p.color : Qt::gray);
             tagMenu->addAction(QIcon(dot), p.tag + QStringLiteral("  ") + p.name, this, [setTag, id = p.id] { setTag(id); });
         }
+        addSystemMenu(selection, QString());
     } else if (kind == SessionItem) {
         menu.addAction(tr("Open"), this, [this, item] { openItem(item); });
         menu.addAction(tr("Open in split right"), this, [this, key] {
@@ -550,6 +571,9 @@ void SessionPanel::showMenu(const QPoint &pos) {
             }
             tagMenu->addSeparator();
             tagMenu->addAction(tr("New tag..."), this, [this] { ProfilesDialog(m_store, this).exec(); });
+            if (m_store->find(key)->type != SessionInfo::Type::Local) {
+                addSystemMenu({*m_store->find(key)}, m_store->find(key)->os);
+            }
             menu.addSeparator();
             menu.addAction(tr("Delete"), this, [this, key, item] {
                 if (QMessageBox::question(this, tr("Delete session"), tr("Delete \"%1\"?").arg(item->text(0)))

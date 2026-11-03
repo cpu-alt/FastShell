@@ -1,20 +1,22 @@
-<p align="center"><img src="docs/logo.png" width="128" alt="EMF Hexa"></p>
+<p align="center"><img src="docs/logo.png" width="128" alt="FastShell"></p>
 
-# EMF Hexa
+# FastShell
 
-Terminal SSH, Telnet, série et local d'EMF NET. Il est construit sur une refonte moderne des
-composants open source de [WindTerm](https://github.com/kingToolbox/WindTerm) (Apache-2.0).
+Terminal SSH, Telnet, série, bureau à distance (RDP) et local. Il est construit sur une refonte
+moderne des composants open source de [WindTerm](https://github.com/kingToolbox/WindTerm) (Apache-2.0).
 
-Le nom et le logo reprennent l'hexagone d'EMF NET : une tuile hexagonale en relief (bord biseauté
-bleu éclairé, face en creux avec reflet), avec une invite de terminal `>` et un curseur lumineux.
+**Crédits** : Nathan Witz & Patrizio Ventura.
 
-![EMF Hexa](docs/screenshot-split.png)
+Le logo est une tuile hexagonale en relief (bord biseauté bleu éclairé, face en creux avec
+reflet), avec une invite de terminal `>` et un curseur lumineux.
+
+![FastShell](docs/screenshot-split.png)
 
 > WindTerm n'est open source qu'en partie : le dépôt d'origine ne contient pas le code de
 > l'application, seulement quelques composants. Ce projet modernise ces composants et
 > construit autour d'eux un terminal complet, indépendant du WindTerm officiel.
-> L'application s'appelait « WindTerm NG » dans ses premières versions ; ses sessions et
-> réglages sont repris automatiquement.
+> L'application s'est appelée « WindTerm NG » puis « EMF Hexa » ; leurs sessions et réglages
+> sont repris automatiquement au premier lancement de FastShell.
 
 ## Ce que fait l'application
 
@@ -65,7 +67,7 @@ bleu éclairé, face en creux avec reflet), avec une invite de terminal `>` et u
      propre onglet. Le terminal déplacé reste connecté ;
   2. sélectionner plusieurs sessions (Ctrl+clic) → « Open N sessions side by side », ou clic droit
      sur un dossier → « Open all side by side » : grille automatique (2 → côte à côte, 4 → 2×2…) ;
-  3. en ligne de commande : `EMFHexa.exe --side-by-side admin@10.0.0.1 admin@10.0.0.2`
+  3. en ligne de commande : `FastShell.exe --side-by-side admin@10.0.0.1 admin@10.0.0.2`
      (accepte aussi `telnet hôte`, `rdp hôte`, `"COM3 115200"` et `local`).
 
   Chaque panneau a sa barre de titre (couleur et nom de la session, □ pour l'agrandir seul dans
@@ -83,13 +85,19 @@ bleu éclairé, face en creux avec reflet), avec une invite de terminal `>` et u
   taille de l'onglet. Clic droit sur l'onglet : se déconnecter / reconnecter, ou ouvrir la même
   session dans mstsc. Il faut Qt ActiveQt à la compilation (voir plus bas) ; sans lui, l'onglet
   propose d'ouvrir la session dans mstsc.
+- **Icône du système** : chaque session peut afficher le logo de son système (Windows Server,
+  Windows, Ubuntu, Debian, Red Hat, CentOS/Rocky/Alma, Linux, serveur, Cisco, FS, Fortinet,
+  MikroTik, switch, routeur, pare-feu), dans l'arbre des sessions et sur l'onglet. Choix dans la
+  fenêtre de la session (« System ») ou par clic droit → System, aussi sur plusieurs sessions à
+  la fois. Un petit point de la couleur de la session reste en coin.
 
 ### Interface
 
 Thème sombre moderne : onglets arrondis reliés au terminal, barre d'outils à icônes (nouvelle
-session, onglet local, bureau à distance, coupures, taper partout), menus et champs arrondis,
-barres de défilement fines, police Segoe UI Variable, et barre de titre Windows sombre aux
-couleurs de l'app (coins arrondis sous Windows 11).
+session, onglet local, bureau à distance, coupures, taper partout, puis la vue : zoom −/+, police,
+heure et numéros de ligne, panneaux Session / Filer / Outline, plein écran), menus et champs
+arrondis, barres de défilement fines, police Segoe UI Variable, et barre de titre Windows sombre
+aux couleurs de l'app (coins arrondis sous Windows 11).
 
 - **Session** (à droite) : sessions enregistrées rangées dans des dossiers et sous-dossiers.
   Clic droit pour créer, modifier, dupliquer, renommer ou supprimer ; glisser-déposer pour
@@ -120,8 +128,12 @@ couleurs de l'app (coins arrondis sous Windows 11).
 
 - Onglets de terminal local : PowerShell 7, Windows PowerShell ou cmd sous Windows (ConPty),
   `$SHELL` sous Linux et macOS.
-- Sessions **SSH** : agent, clés de `~/.ssh`, fichier de clé, mot de passe, keyboard-interactive,
-  vérification des clés d'hôte via `known_hosts` et lecture de `~/.ssh/config`.
+- Sessions **SSH**, comme PuTTY : sans utilisateur enregistré, l'onglet s'ouvre et demande
+  `login as:` dans le terminal, puis le mot de passe (non affiché), avec 3 essais (« Access
+  denied » entre deux). Un utilisateur ou mot de passe enregistré est utilisé tel quel. Aucune
+  clé n'est essayée toute seule (ni agent, ni clés de `~/.ssh`, ni `~/.ssh/config`) : seule la clé
+  privée choisie dans la session ou l'utilisateur partagé sert. Mot de passe et
+  keyboard-interactive, vérification des clés d'hôte via `known_hosts`. Ctrl+C annule la saisie.
 - Compatibilité avec les vieux équipements (switchs, routeurs) : si le serveur ne propose que des
   algorithmes SHA-1/CBC, la connexion est retentée automatiquement avec eux, comme PuTTY ou
   MobaXterm, et un avertissement s'affiche. L'option « Compatibility with old devices » de la
@@ -212,8 +224,8 @@ cmake --build build
 ./build/tests/wtng_tests.exe
 ```
 
-Pour obtenir un dossier autonome, copier `build/src/EMFHexa.exe` dans un dossier et lancer
-`windeployqt6` dessus. Le dossier `dist/` contient déjà une version prête à lancer : `dist/EMFHexa.exe`.
+Pour obtenir un dossier autonome, copier `build/src/FastShell.exe` dans un dossier et lancer
+`windeployqt6` dessus. Le dossier `dist/` contient déjà une version prête à lancer : `dist/FastShell.exe`.
 
 ### Linux / macOS
 
@@ -236,7 +248,9 @@ tests/         41 tests GoogleTest et un benchmark
 
 - Le code Linux et macOS (`UnixPty`) est écrit mais n'a pas été compilé ni testé : seul Windows l'a été.
 - SSH et SFTP n'ont pas encore été testés contre un vrai serveur (aucun serveur SSH disponible
-  sur la machine de test).
+  sur la machine de test) ; la connexion et le login sont testés contre un petit serveur libssh
+  local dans les tests automatiques. Le bureau à distance intégré a été vérifié jusqu'au
+  chargement du contrôle Windows, pas encore sur un vrai serveur RDP.
 - Pas encore de pliage des sorties de commande, ni de
   synchronisation automatique du Filer avec le dossier courant du shell.
 - Hors Windows, les mots de passe ne sont pas enregistrés (pas encore de trousseau système).

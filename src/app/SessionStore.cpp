@@ -1,4 +1,4 @@
-// Copyright 2026 EMF Hexa contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #include "app/SessionStore.h"
 
 #include <QDateTime>
@@ -94,6 +94,7 @@ QJsonObject toJson(const SessionInfo &s, bool withLogins) {
         {QStringLiteral("type"), typeKey(s.type)},
     };
     if (s.color.isValid()) o.insert(QStringLiteral("color"), s.color.name());
+    if (!s.os.isEmpty()) o.insert(QStringLiteral("os"), s.os);
     if (s.type == SessionInfo::Type::Local) {
         o.insert(QStringLiteral("program"), s.program);
         o.insert(QStringLiteral("arguments"), QJsonArray::fromStringList(s.arguments));
@@ -128,6 +129,7 @@ SessionInfo sessionFromJson(const QJsonObject &o) {
     s.folder = cleanFolder(o.value(QStringLiteral("folder")).toString());
     s.type = typeFromKey(o.value(QStringLiteral("type")).toString());
     s.color = QColor(o.value(QStringLiteral("color")).toString());
+    s.os = o.value(QStringLiteral("os")).toString();
     s.program = o.value(QStringLiteral("program")).toString();
     for (const QJsonValue &a : o.value(QStringLiteral("arguments")).toArray()) s.arguments << a.toString();
     s.workingDirectory = o.value(QStringLiteral("workingDirectory")).toString();
@@ -500,7 +502,7 @@ SessionStore::ImportResult SessionStore::importSessions(const QByteArray &data, 
     ImportResult result;
     const QJsonObject in = QJsonDocument::fromJson(data).object();
     if (in.value(QStringLiteral("format")).toString() != QLatin1String(ExportFormat)) {
-        result.error = tr("This file is not an EMF Hexa session export.");
+        result.error = tr("This file is not a FastShell session export.");
         return result;
     }
 

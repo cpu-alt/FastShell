@@ -92,6 +92,33 @@ TEST_F(TestStore, RemoteDesktopRoundTrip) {
     EXPECT_EQ(s.user, QStringLiteral("EMF\\admin"));
 }
 
+TEST_F(TestStore, SystemIconRoundTrip) {
+    QByteArray exported;
+    {
+        SessionStore store;
+        SessionInfo web = ssh(QStringLiteral("web"), QStringLiteral("Linux"));
+        web.os = QStringLiteral("ubuntu");
+        store.upsert(web);
+        store.upsert(ssh(QStringLiteral("plain"), QStringLiteral("Linux")));  // no system
+        exported = store.exportSessions(QString(), SessionStore::ExportLogins::None);
+    }
+    SessionStore reloaded;
+    ASSERT_EQ(reloaded.sessions().size(), 2);
+    for (const SessionInfo &s : reloaded.sessions()) {
+        EXPECT_EQ(s.os, s.name == QStringLiteral("web") ? QStringLiteral("ubuntu") : QString());
+    }
+    EXPECT_TRUE(exported.contains("\"ubuntu\""));
+    QFile::remove(reloaded.filePath());
+
+    SessionStore target;
+    ASSERT_TRUE(target.importSessions(exported, QStringLiteral("Imported")).error.isEmpty());
+    bool found = false;
+    for (const SessionInfo &s : target.sessions()) {
+        if (s.name == QStringLiteral("web")) found = s.os == QStringLiteral("ubuntu");
+    }
+    EXPECT_TRUE(found);
+}
+
 TEST_F(TestStore, DetectsLocalShells) {
     SessionStore store;
     EXPECT_FALSE(store.detectedShells().isEmpty());

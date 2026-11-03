@@ -1,6 +1,6 @@
-// Copyright 2026 EMF Hexa contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
-// The EMF Hexa logo: the EMF NET hexagon as a beveled 3D tile holding a
+// The FastShell logo: the EMF NET hexagon as a beveled 3D tile holding a
 // terminal prompt. Drawn with QPainter so the window icon, the .ico file and
 // the About box all come from the same code and stay sharp at any size.
 #pragma once

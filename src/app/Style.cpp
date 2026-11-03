@@ -1,4 +1,4 @@
-// Copyright 2026 EMF Hexa contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #include "app/Style.h"
 
 #include <QApplication>
@@ -309,6 +309,56 @@ QIcon icon(Glyph glyph) {
         p.setPen(pen);
         p.drawLine(QPointF(13, 13), QPointF(27, 27));
         p.drawLine(QPointF(27, 13), QPointF(13, 27));
+        break;
+    case Glyph::ZoomIn:
+    case Glyph::ZoomOut:  // a magnifier with + or -
+        p.drawEllipse(QPointF(17, 17), 9, 9);
+        p.drawLine(QPointF(24, 24), QPointF(32, 32));
+        accentPen();
+        p.drawLine(QPointF(12.5, 17), QPointF(21.5, 17));
+        if (glyph == Glyph::ZoomIn) p.drawLine(QPointF(17, 12.5), QPointF(17, 21.5));
+        break;
+    case Glyph::Font:  // a capital A
+        p.drawPolyline(QPolygonF({QPointF(9, 32), QPointF(20, 8), QPointF(31, 32)}));
+        accentPen();
+        p.drawLine(QPointF(13.5, 24), QPointF(26.5, 24));
+        break;
+    case Glyph::Clock:
+        p.drawEllipse(QPointF(20, 20), 12, 12);
+        accentPen();
+        p.drawPolyline(QPolygonF({QPointF(20, 12), QPointF(20, 20), QPointF(26, 23)}));
+        break;
+    case Glyph::LineNumbers:  // a page with a numbered margin
+        p.drawRoundedRect(box, 4, 4);
+        p.drawLine(QPointF(15, 9), QPointF(15, 31));
+        for (const qreal y : {15.0, 20.0, 25.0}) p.drawLine(QPointF(19, y), QPointF(28, y));
+        accentPen();
+        for (const qreal y : {15.0, 20.0, 25.0}) p.drawPoint(QPointF(11, y));
+        break;
+    case Glyph::SessionList:  // the session panel: a list in a side column
+        p.drawRoundedRect(box, 4, 4);
+        p.drawLine(QPointF(22, 9), QPointF(22, 31));
+        accentPen();
+        for (const qreal y : {15.0, 20.0, 25.0}) p.drawLine(QPointF(25.5, y), QPointF(29.5, y));
+        break;
+    case Glyph::Filer:  // a folder
+        p.drawPolyline(QPolygonF({QPointF(7, 29), QPointF(7, 11), QPointF(15, 11), QPointF(18, 14), QPointF(33, 14),
+                                  QPointF(33, 29), QPointF(7, 29)}));
+        accentPen();
+        p.drawLine(QPointF(7, 19), QPointF(33, 19));
+        break;
+    case Glyph::Outline:  // a bulleted list
+        for (const qreal y : {12.0, 20.0, 28.0}) p.drawLine(QPointF(15, y), QPointF(33, y));
+        accentPen();
+        for (const qreal y : {12.0, 20.0, 28.0}) p.drawPoint(QPointF(8.5, y));
+        break;
+    case Glyph::FullScreen:  // four corners
+        p.drawPolyline(QPolygonF({QPointF(7, 15), QPointF(7, 8), QPointF(14, 8)}));
+        p.drawPolyline(QPolygonF({QPointF(26, 8), QPointF(33, 8), QPointF(33, 15)}));
+        p.drawPolyline(QPolygonF({QPointF(33, 25), QPointF(33, 32), QPointF(26, 32)}));
+        p.drawPolyline(QPolygonF({QPointF(14, 32), QPointF(7, 32), QPointF(7, 25)}));
+        accentPen();
+        p.drawRoundedRect(QRectF(14, 15, 12, 10), 2, 2);
         break;
     }
     p.end();

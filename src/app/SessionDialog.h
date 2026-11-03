@@ -1,4 +1,4 @@
-// Copyright 2026 EMF Hexa contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #pragma once
 
 #include <QDialog>
@@ -40,6 +40,7 @@ private:
     QComboBox *m_folder;
     QComboBox *m_type;
     QComboBox *m_profile;
+    QComboBox *m_os;
     QWidget *m_profileRow;
 
     QLineEdit *m_host;

@@ -1,10 +1,12 @@
-# EMF Hexa — notes pour Claude
+# FastShell — notes pour Claude
 
-Terminal SSH / Telnet / série / local pour EMF NET (Windows d'abord), en C++20 + Qt 6.
+Terminal SSH / Telnet / série / RDP / local (Windows d'abord), en C++20 + Qt 6. Crédits :
+Nathan Witz & Patrizio Ventura.
 Construit sur une refonte des composants open source de WindTerm (Apache-2.0). L'app
-s'appelait « WindTerm NG » au début : le dossier, la cible CMake `windterm-ng` et les
-macros `WTNG_*` gardent ce nom, c'est voulu. Le nom affiché et l'exe sont **EMF Hexa** /
-`EMFHexa.exe`.
+s'appelait « WindTerm NG » puis « EMF Hexa » : la cible CMake `windterm-ng`, les
+macros `WTNG_*` et quelques identifiants internes (format d'export `emfhexa-sessions`, types MIME,
+assets/emfhexa.*) gardent les anciens noms, c'est voulu. Le nom affiché et l'exe sont **FastShell** /
+`FastShell.exe`.
 
 L'utilisateur parle français : répondre en français, simplement. Les textes de l'interface
 sont en anglais (via `tr()`), le README est en français.
@@ -17,7 +19,7 @@ La chaîne d'outils est MSYS2 UCRT64 (`C:\msys64`), à mettre en tête du PATH d
 export PATH=/c/msys64/ucrt64/bin:$PATH
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release   # une seule fois
 cmake --build build                                        # doit finir sans warning
-./build/tests/wtng_tests.exe            # cœur, terminal, telnet, série, benchmark
+./build/tests/wtng_tests.exe            # cœur, terminal, telnet, série, login SSH, benchmark
 ./build/tests/wtng_session_tests.exe    # sessions, import/export, connexion rapide
 ```
 
@@ -30,17 +32,19 @@ cmake --build build                                        # doit finir sans war
 
 ## Livrer dans `dist/`
 
-`dist/` est la version autonome que l'utilisateur lance (`dist\EMFHexa.exe` + DLL Qt).
+`dist/` est la version autonome que l'utilisateur lance (`dist\FastShell.exe` + DLL Qt ;
+ActiveQt est lié en statique, pas de DLL en plus).
 
 ```bash
-cp build/src/EMFHexa.exe dist/
-windeployqt6 --release --no-translations --no-system-d3d-compiler --no-opengl-sw dist/EMFHexa.exe
+cp build/src/FastShell.exe dist/
+windeployqt6 --release --no-translations --no-system-d3d-compiler --no-opengl-sw dist/FastShell.exe
 ```
 
 Après un nouveau module Qt ou une nouvelle bibliothèque, recopier les DLL manquantes
-(`ldd dist/... | grep ucrt64`). Si l'exe est verrouillé parce que l'utilisateur a l'app
-ouverte, **ne jamais tuer son processus** : Windows permet de renommer un exe en cours
-d'exécution (`EMFHexa.old.exe`) puis de copier le nouveau à côté.
+(`ldd dist/... | grep ucrt64`). Mettre `dist/` à jour **après chaque build réussi** (l'utilisateur
+teste depuis là). Si FastShell (ou un ancien EMFHexa.exe) est ouvert, **le fermer** puis copier par-dessus ; ne **jamais**
+créer de `*.old.exe` (demande de l'utilisateur). Une instance lancée en administrateur
+ne peut pas être fermée : demander à l'utilisateur de la fermer.
 
 ## Organisation
 
@@ -63,12 +67,19 @@ tools/         make_icon.cpp : régénère assets/emfhexa.ico et docs/logo.png d
 ../WindTerm/   clone d'origine de kingToolbox/WindTerm, à ne pas modifier (référence)
 ```
 
-Données utilisateur : `%APPDATA%\EMF NET\EMFHexa\sessions.json` (+ QSettings sous
-`HKCU\Software\EMF NET\EMFHexa`). Au démarrage, `main.cpp` reprend les données de l'ancien
-nom (`WindTermNG`) tant qu'EMF Hexa n'a aucune session.
+Données utilisateur : `%APPDATA%\EMF NET\FastShell\sessions.json` (+ QSettings sous
+`HKCU\Software\EMF NET\FastShell`). Au démarrage, `main.cpp` reprend les réglages des anciens
+noms (`EMF NET\EMFHexa`, puis `WindTermNG`) et leurs sessions tant que FastShell n'en a aucune.
 
 ## Choix voulus par l'utilisateur
 
+- **Login SSH comme PuTTY** : jamais de clé automatique (pas d'agent, pas de `~/.ssh`, pas de
+  `~/.ssh/config`) ; seule la clé choisie dans la session ou l'utilisateur partagé sert. Sans
+  utilisateur/mot de passe, l'onglet s'ouvre et demande `login as:` puis le mot de passe **dans
+  le terminal** (`SshBackend::readLine`), 3 essais. Les dialogues ne servent qu'à la clé d'hôte
+  et à la phrase de passe d'une clé. Testé par `tests/test_ssh_login.cpp` (serveur libssh local).
+- **Icône du système** par session (`SessionInfo::os`, liste dans `icons::systems()`, dessinée
+  dans `Icons.h`), dans l'arbre et sur l'onglet.
 - **SSH comme PuTTY** : aucun réglage spécial imposé. Si un vieil équipement refuse les
   algorithmes modernes, `sshConnect` réessaie seul avec SHA-1/CBC ajoutés (préfixe `+`) ;
   `diffie-hellman-group1-sha1` seulement si l'option « Compatibility with old devices » est cochée.
@@ -78,7 +89,7 @@ nom (`WindTermNG`) tant qu'EMF Hexa n'a aucune session.
 - **Mots de passe** : jamais en clair. DPAPI sur la machine ; à l'export, ré-chiffrés en
   AES-256-GCM avec un mot de passe d'export (3 niveaux : adresses seules / + utilisateurs /
   + mots de passe).
-- **Logo** : hexagone EMF NET (pointe en haut, deux barres fines) en tuile 3D avec `>` et
+- **Logo** : hexagone (pointe en haut, deux barres fines) en tuile 3D avec `>` et
   curseur. Après modification de `Logo.h`, relancer `tools/make_icon` puis `touch assets/emfhexa.rc`.
 
 ## Pièges rencontrés
@@ -107,16 +118,17 @@ L'utilisateur travaille sur ce PC. **Ne pas simuler de touches** (SendKeys/keybd
 partent vers la fenêtre au premier plan, qui peut être la sienne (c'est déjà arrivé avec les
 Paramètres Windows). Préférer :
 
-- la ligne de commande de l'app : `EMFHexa.exe --side-by-side local local` ou
-  `EMFHexa.exe admin@10.0.0.1` ;
+- la ligne de commande de l'app : `FastShell.exe --side-by-side local local` ou
+  `FastShell.exe admin@10.0.0.1` (argument entre guillemets pour `"rdp hôte"`) ;
 - une capture par `PrintWindow` sur le handle de **sa propre** instance (avec
   `SetProcessDPIAware()` pour ne pas tronquer), puis fermer cette instance par son PID.
 
-L'outil computer-use ne reconnaît pas EMFHexa.exe (pas dans le menu Démarrer).
+L'outil computer-use ne reconnaît pas FastShell.exe (pas dans le menu Démarrer).
 
 ## Non testé à ce jour
 
-Le bureau à distance intégré (contrôle ActiveX, jamais lancé sur un vrai serveur RDP),
+Le bureau à distance intégré (le contrôle ActiveX se charge et lance la connexion, mais
+jamais essayé sur un vrai serveur RDP),
 connexion SSH/SFTP complète sur un vrai serveur (seule la négociation de clé a été validée
 sur le switch A41-SW-01), port série réel, UnixPty, et plusieurs interactions souris
 (glisser-déposer, boutons □/× des panneaux, menus contextuels, dialogues). Le dire quand

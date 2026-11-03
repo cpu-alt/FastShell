@@ -52,7 +52,7 @@ QString quoteArgument(const QString &arg) {
 
 std::wstring environmentBlock(const QStringList &extra) {
     QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-    env.insert(QStringLiteral("TERM_PROGRAM"), QStringLiteral("EMFHexa"));
+    env.insert(QStringLiteral("TERM_PROGRAM"), QStringLiteral("FastShell"));
     for (const QString &entry : extra) {
         const qsizetype eq = entry.indexOf(QLatin1Char('='));
         if (eq > 0) {

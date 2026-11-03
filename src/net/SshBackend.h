@@ -2,8 +2,9 @@
 //
 // Interactive SSH shell over the system libssh (0.11+). Replaces the bundled
 // libssh 0.9.5 fork, which is affected by CVE-2023-48795 (Terrapin) and other
-// fixed issues. Agent, default keys, key files, password and
-// keyboard-interactive authentication are supported.
+// fixed issues. Key file (only when the session sets one), password and
+// keyboard-interactive authentication; login and passwords are typed in
+// the terminal itself, like PuTTY.
 #pragma once
 
 #include <QMutex>
@@ -39,6 +40,9 @@ Q_SIGNALS:
 
 private:
     void run();
+    // Worker thread: shows prompt in the terminal and reads a line typed
+    // there (not echoed when secret). nullopt on Ctrl+C or when stopping.
+    std::optional<QString> readLine(const QString &prompt, bool secret);
 
     Options m_options;
     std::thread m_worker;
@@ -46,6 +50,7 @@ private:
 
     mutable QMutex m_mutex;
     QByteArray m_pendingWrite;
+    QString m_workingUser;
     QString m_workingPassword;
     bool m_usedLegacy = false;
     int m_rows = 24;

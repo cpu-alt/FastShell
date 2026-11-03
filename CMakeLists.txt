@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(EMFHexa
+project(FastShell
     VERSION 3.1.0
-    DESCRIPTION "EMF Hexa: SSH, Telnet, serial and local terminal by EMF NET, built on the WindTerm components"
+    DESCRIPTION "FastShell: SSH, Telnet, serial, RDP and local terminal, built on the WindTerm components"
     LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
