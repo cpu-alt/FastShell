@@ -16,6 +16,7 @@ inline QColor defaultColor(SessionInfo::Type type) {
     case SessionInfo::Type::Local: return QColor(0x56, 0xB6, 0xC2);
     case SessionInfo::Type::Telnet: return QColor(0x61, 0xAF, 0xEF);
     case SessionInfo::Type::Serial: return QColor(0xE5, 0xC0, 0x7B);
+    case SessionInfo::Type::Rdp: return QColor(0x98, 0xC3, 0x79);
     default: return QColor(0xE8, 0x3E, 0x8C);
     }
 }
@@ -24,7 +25,7 @@ inline QColor sessionColor(const SessionInfo &s) {
     return s.color.isValid() ? s.color : defaultColor(s.type);
 }
 
-// Round dot for SSH, square for Telnet, ">_" box for local shells.
+// Round dot for SSH, square for Telnet, ">_" box for local shells, a screen for RDP.
 inline QIcon session(const SessionInfo &s) {
     QPixmap pixmap(32, 32);
     pixmap.fill(Qt::transparent);
@@ -52,6 +53,13 @@ inline QIcon session(const SessionInfo &s) {
         p.drawLine(QPointF(16, 21), QPointF(23, 21));
         break;
     }
+    case SessionInfo::Type::Rdp:  // a monitor on its stand
+        p.drawRoundedRect(QRectF(3, 5, 26, 17), 3, 3);
+        p.drawRect(QRectF(14, 22, 4, 4));
+        p.drawRoundedRect(QRectF(9, 25, 14, 3), 1.5, 1.5);
+        p.setBrush(QColor(0x1B, 0x1D, 0x23));
+        p.drawRoundedRect(QRectF(6, 8, 20, 11), 1.5, 1.5);
+        break;
     }
     return QIcon(pixmap);
 }

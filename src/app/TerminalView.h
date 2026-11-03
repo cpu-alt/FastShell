@@ -22,6 +22,9 @@ class ScrollBar;
 
 // Drag-and-drop format for sessions dragged out of the session tree (ids, one per line).
 inline constexpr char SessionMimeType[] = "application/x-emfhexa-sessions";
+// Drag-and-drop format for a pane dragged by its title bar or its tab
+// (the pane itself is TerminalView::dragSource()).
+inline constexpr char PaneMimeType[] = "application/x-emfhexa-pane";
 
 class TerminalView : public QWidget {
     Q_OBJECT
@@ -71,6 +74,11 @@ public:
     void setZoomed(bool zoomed);
     int headerHeight() const;
     bool backspaceSendsCtrlH() const { return m_backspaceCtrlH; }
+    // Starts dragging this pane (to split it next to another one). Returns
+    // when the mouse is released.
+    void startPaneDrag();
+    // The pane being dragged, or null.
+    static TerminalView *dragSource();
     // Accent line marking the focused pane when a tab is split.
     void setActiveFrame(bool active) {
         if (m_activeFrame != active) {
@@ -86,8 +94,6 @@ Q_SIGNALS:
     void broadcastInput(const QByteArray &data);
     void closeRequested();
     void zoomRequested();
-    // Sessions dragged from the session tree and dropped on one side of this pane.
-    void sessionsDropped(const QStringList &sessionIds, Qt::Edge edge);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -104,10 +110,6 @@ protected:
     void focusInEvent(QFocusEvent *event) override;
     void focusOutEvent(QFocusEvent *event) override;
     bool focusNextPrevChild(bool next) override;
-    void dragEnterEvent(QDragEnterEvent *event) override;
-    void dragMoveEvent(QDragMoveEvent *event) override;
-    void dragLeaveEvent(QDragLeaveEvent *event) override;
-    void dropEvent(QDropEvent *event) override;
 
 private:
     struct Position {
@@ -138,7 +140,6 @@ private:
     qreal textLeft() const { return m_padding + m_gutterWidth; }
     qreal textTop() const { return m_padding + headerHeight(); }
     void paintHeader(QPainter &painter);
-    QRectF dropRect(Qt::Edge edge) const;
 
     BackendFactory m_factory;
     QPointer<Backend> m_backend;
@@ -185,5 +186,5 @@ private:
     QColor m_paneColor;
     QRect m_closeRect;
     QRect m_zoomRect;
-    int m_dropEdge = -1;  // Qt::Edge while a session is dragged over, -1 otherwise
+    QPoint m_headerPress{-1, -1};  // where the title bar was pressed, to start a drag
 };

@@ -1,0 +1,20 @@
+include("C:/msys64/ucrt64/share/cmake/Modules/GoogleTestAddTests.cmake")
+gtest_discover_tests_impl(
+  TEST_TARGET [==[wtng_tests]==]
+  TEST_EXECUTABLE [==[C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/build/tests/wtng_tests.exe]==]
+  TEST_EXECUTOR [==[]==]
+  TEST_WORKING_DIR [==[C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/build/tests]==]
+  TEST_EXTRA_ARGS [==[]==]
+  TEST_PROPERTIES [==[]==]
+  TEST_PREFIX [==[]==]
+  TEST_SUFFIX [==[]==]
+  TEST_FILTER [==[]==]
+  NO_PRETTY_TYPES [==[FALSE]==]
+  NO_PRETTY_VALUES [==[FALSE]==]
+  TEST_LIST [==[wtng_tests_TESTS]==]
+  CTEST_FILE [==[C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/build/tests/wtng_tests_74785a0e_tests.cmake]==]
+  TEST_DISCOVERY_TIMEOUT [==[5]==]
+  TEST_DISCOVERY_EXTRA_ARGS [==[]==]
+  TEST_XML_OUTPUT_DIR [==[]==]
+  TEST_JSON_OUTPUT_DIR [==[C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/build/tests]==]
+)

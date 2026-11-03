@@ -71,6 +71,27 @@ TEST_F(TestStore, PasswordIsNeverStoredInClear) {
     EXPECT_FALSE(file.readAll().contains("hunter2"));
 }
 
+TEST_F(TestStore, RemoteDesktopRoundTrip) {
+    {
+        SessionStore store;
+        SessionInfo s;
+        s.name = QStringLiteral("AD server");
+        s.type = SessionInfo::Type::Rdp;
+        s.host = QStringLiteral("10.0.0.20");
+        s.port = 3390;
+        s.user = QStringLiteral("EMF\\admin");
+        store.upsert(s);
+    }
+    SessionStore reloaded;
+    ASSERT_EQ(reloaded.sessions().size(), 1);
+    const SessionInfo &s = reloaded.sessions().first();
+    EXPECT_EQ(s.type, SessionInfo::Type::Rdp);
+    EXPECT_EQ(s.typeName(), QStringLiteral("RDP"));
+    EXPECT_EQ(s.host, QStringLiteral("10.0.0.20"));
+    EXPECT_EQ(s.port, 3390);
+    EXPECT_EQ(s.user, QStringLiteral("EMF\\admin"));
+}
+
 TEST_F(TestStore, DetectsLocalShells) {
     SessionStore store;
     EXPECT_FALSE(store.detectedShells().isEmpty());
@@ -268,6 +289,18 @@ TEST(QuickConnect, Parses) {
     auto e = SessionStore::parseQuickConnect(QStringLiteral("root@[fe80::1]:22"));
     ASSERT_TRUE(e);
     EXPECT_EQ(e->host, QStringLiteral("fe80::1"));
+
+    auto f = SessionStore::parseQuickConnect(QStringLiteral("rdp admin@srv-ad01"));
+    ASSERT_TRUE(f);
+    EXPECT_EQ(f->type, SessionInfo::Type::Rdp);
+    EXPECT_EQ(f->user, QStringLiteral("admin"));
+    EXPECT_EQ(f->host, QStringLiteral("srv-ad01"));
+    EXPECT_EQ(f->port, 3389);
+
+    auto g = SessionStore::parseQuickConnect(QStringLiteral("rdp://10.0.0.20:3390"));
+    ASSERT_TRUE(g);
+    EXPECT_EQ(g->type, SessionInfo::Type::Rdp);
+    EXPECT_EQ(g->port, 3390);
 
     EXPECT_FALSE(SessionStore::parseQuickConnect(QStringLiteral("")));
     EXPECT_FALSE(SessionStore::parseQuickConnect(QStringLiteral("two words here")));

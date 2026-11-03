@@ -13,7 +13,7 @@
 #include <optional>
 
 struct SessionInfo {
-    enum class Type { Local, Ssh, Telnet, Serial };
+    enum class Type { Local, Ssh, Telnet, Serial, Rdp };
 
     QString id;
     QString name;
@@ -52,6 +52,7 @@ struct SessionInfo {
     QString password() const;
     void setPassword(const QString &password);
     QString typeName() const;
+    static int defaultPort(Type type);  // 22, 23 or 3389
 };
 
 // A user account shared by many sessions ("admin" on all the switches...).
@@ -131,7 +132,7 @@ public:
     ImportResult importSessions(const QByteArray &data, const QString &targetFolder,
                                 const QString &passphrase = QString());
 
-    // "user@host:port", "ssh host", "telnet host:23", "COM3 115200" -> a temporary session.
+    // "user@host:port", "ssh host", "telnet host:23", "rdp host", "COM3 115200" -> a temporary session.
     static std::optional<SessionInfo> parseQuickConnect(const QString &text);
 
     QString filePath() const;

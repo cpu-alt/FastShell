@@ -3,14 +3,17 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QDrag>
 #include <QFontDatabase>
 #include <QFontMetricsF>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QMimeData>
 #include <QPainter>
+#include <QPainterPath>
 #include <QRegularExpression>
 #include <QScreen>
+#include <algorithm>
 
 #include "app/KeyMapper.h"
 #include "widgets/ScrollBar.h"
@@ -59,7 +62,7 @@ TerminalView::TerminalView(BackendFactory factory, QWidget *parent)
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_InputMethodEnabled);
     setAttribute(Qt::WA_OpaquePaintEvent);  // we paint every pixel ourselves
-    setAcceptDrops(true);  // sessions dragged from the tree
+    // Drops (panes, sessions from the tree) are handled by the TabPage around.
     setMouseTracking(true);
     setCursor(Qt::IBeamCursor);
 
@@ -568,22 +571,6 @@ void TerminalView::paintEvent(QPaintEvent *) {
     if (m_headerVisible) {
         paintHeader(painter);
     }
-    if (m_dropEdge >= 0) {
-        // Preview of where the dropped session will open.
-        const QRectF zone = dropRect(Qt::Edge(m_dropEdge)).adjusted(3, 3, -3, -3);
-        QColor fill = m_theme.cursor;
-        fill.setAlpha(60);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setBrush(fill);
-        painter.setPen(QPen(m_theme.cursor, 2));
-        painter.drawRoundedRect(zone, 6, 6);
-        QFont font = QApplication::font();
-        font.setBold(true);
-        font.setPointSizeF(font.pointSizeF() + 2);
-        painter.setFont(font);
-        painter.setPen(Qt::white);
-        painter.drawText(zone, Qt::AlignCenter, tr("Open here"));
-    }
     m_paintedRevision = m_screen->revision();
 }
 
@@ -754,6 +741,7 @@ void TerminalView::mousePressEvent(QMouseEvent *event) {
         if (event->button() == Qt::LeftButton) {
             if (m_closeRect.contains(event->position().toPoint())) Q_EMIT closeRequested();
             else if (m_zoomRect.contains(event->position().toPoint())) Q_EMIT zoomRequested();
+            else m_headerPress = event->position().toPoint();  // may become a drag of the pane
         }
         return;
     }
@@ -780,6 +768,17 @@ void TerminalView::mousePressEvent(QMouseEvent *event) {
 }
 
 void TerminalView::mouseMoveEvent(QMouseEvent *event) {
+    if (m_headerPress.x() >= 0) {
+        // Title bar held: far enough, and the pane goes where it is dropped.
+        if (!(event->buttons() & Qt::LeftButton)) {
+            m_headerPress = QPoint(-1, -1);
+        } else {
+            if ((event->position().toPoint() - m_headerPress).manhattanLength() >= QApplication::startDragDistance()) {
+                startPaneDrag();
+            }
+            return;
+        }
+    }
     if (m_headerVisible) {
         const bool onHeader = event->position().y() < headerHeight();
         setCursor(onHeader ? Qt::ArrowCursor : Qt::IBeamCursor);
@@ -788,7 +787,8 @@ void TerminalView::mouseMoveEvent(QMouseEvent *event) {
             const QPoint pos = event->position().toPoint();
             setToolTip(m_closeRect.contains(pos)  ? tr("Close this pane")
                        : m_zoomRect.contains(pos) ? (m_zoomed ? tr("Restore") : tr("Enlarge this pane"))
-                                                  : QString());
+                                                  : tr("Drag to move this pane"));
+            setCursor(m_closeRect.contains(pos) || m_zoomRect.contains(pos) ? Qt::ArrowCursor : Qt::OpenHandCursor);
             if (!(event->buttons() & Qt::LeftButton)) return;
         } else if (!toolTip().isEmpty()) {
             setToolTip(QString());
@@ -813,6 +813,10 @@ void TerminalView::mouseMoveEvent(QMouseEvent *event) {
 }
 
 void TerminalView::mouseReleaseEvent(QMouseEvent *event) {
+    if (m_headerPress.x() >= 0) {
+        m_headerPress = QPoint(-1, -1);
+        return;
+    }
     if (reportMouse(event, buttonCode(event->button()), false, false)) {
         return;
     }
@@ -909,104 +913,109 @@ void TerminalView::paintHeader(QPainter &p) {
     const int h = headerHeight();
     const QRect bar(0, 0, width(), h);
     const QColor accent = m_paneColor.isValid() ? m_paneColor : m_theme.cursor;
-    p.fillRect(bar, m_activeFrame ? QColor(0x1F, 0x2D, 0x40) : QColor(0x1A, 0x1D, 0x24));
-    p.fillRect(QRect(0, 0, 3, h), accent);  // session color stripe
+    p.fillRect(bar, m_activeFrame ? QColor(0x1E, 0x25, 0x30) : QColor(0x17, 0x1A, 0x20));
     if (m_activeFrame) {
         p.fillRect(QRect(0, h - 2, width(), 2), m_theme.cursor);
     } else {
-        p.fillRect(QRect(0, h - 1, width(), 1), QColor(0x2A, 0x2D, 0x35));
+        p.fillRect(QRect(0, h - 1, width(), 1), QColor(0x24, 0x28, 0x30));
     }
 
     QFont font = QApplication::font();
     font.setBold(m_activeFrame);
     p.setFont(font);
     const QFontMetrics fm(font);
+    p.setRenderHint(QPainter::Antialiasing);
 
     // Buttons on the right: enlarge / restore, then close.
     const int button = h - 8;
     m_closeRect = QRect(width() - button - 6, 4, button, button);
     m_zoomRect = QRect(m_closeRect.left() - button - 4, 4, button, button);
     const QPoint mouse = mapFromGlobal(QCursor::pos());
-    for (const QRect &r : {m_zoomRect, m_closeRect}) {
-        if (r.contains(mouse)) p.fillRect(r, QColor(0xFF, 0xFF, 0xFF, 28));
+    p.setPen(Qt::NoPen);
+    if (m_zoomRect.contains(mouse)) {
+        p.setBrush(QColor(0xFF, 0xFF, 0xFF, 26));
+        p.drawRoundedRect(QRectF(m_zoomRect), 5, 5);
+    }
+    const bool closeHover = m_closeRect.contains(mouse);
+    if (closeHover) {
+        p.setBrush(QColor(0xE5, 0x48, 0x4D));
+        p.drawRoundedRect(QRectF(m_closeRect), 5, 5);
     }
     QPen icon(QColor(0xAB, 0xB2, 0xBF), 1.4);
     p.setPen(icon);
-    p.setRenderHint(QPainter::Antialiasing);
+    p.setBrush(Qt::NoBrush);
     const QRectF z = QRectF(m_zoomRect).adjusted(5, 5, -5, -5);
     if (m_zoomed) {  // two overlapping squares = restore
-        p.drawRect(z.adjusted(2, 0, 0, -2));
-        p.drawRect(z.adjusted(0, 2, -2, 0));
+        p.drawRoundedRect(z.adjusted(2, 0, 0, -2), 1.5, 1.5);
+        p.drawRoundedRect(z.adjusted(0, 2, -2, 0), 1.5, 1.5);
     } else {
-        p.drawRect(z);
+        p.drawRoundedRect(z, 1.5, 1.5);
     }
+    if (closeHover) p.setPen(QPen(Qt::white, 1.4));
     const QRectF c = QRectF(m_closeRect).adjusted(5.5, 5.5, -5.5, -5.5);
     p.drawLine(c.topLeft(), c.bottomRight());
     p.drawLine(c.topRight(), c.bottomLeft());
 
-    // Colored dot + session name (+ state).
+    // Grip (the bar can be dragged), colored dot, session name (+ state).
     p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0x5C, 0x63, 0x70));
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 2; ++col) {
+            p.drawEllipse(QPointF(8 + col * 4, h / 2.0 - 4 + row * 4), 1.1, 1.1);
+        }
+    }
     p.setBrush(accent);
-    p.drawEllipse(QRectF(11, h / 2.0 - 4, 8, 8));
+    p.drawEllipse(QRectF(19, h / 2.0 - 4, 8, 8));
     QString title = m_paneTitle.isEmpty() ? m_title : m_paneTitle;
     if (m_finished) title += tr("  (disconnected)");
     if (m_zoomed) title += tr("  (enlarged)");
-    p.setPen(m_activeFrame ? QColor(0xE6, 0xE9, 0xEF) : QColor(0x9A, 0xA1, 0xAD));
-    const int textWidth = m_zoomRect.left() - 28 - 8;
-    p.drawText(QRect(26, 0, textWidth, h), Qt::AlignVCenter | Qt::AlignLeft,
+    p.setPen(m_activeFrame ? QColor(0xE6, 0xE9, 0xEF) : QColor(0x8A, 0x91, 0x9E));
+    const int textWidth = m_zoomRect.left() - 34 - 8;
+    p.drawText(QRect(34, 0, textWidth, h), Qt::AlignVCenter | Qt::AlignLeft,
                fm.elidedText(title, Qt::ElideRight, textWidth));
     p.setRenderHint(QPainter::Antialiasing, false);
 }
 
-QRectF TerminalView::dropRect(Qt::Edge edge) const {
-    const QRectF area(0, headerHeight(), width() - m_scrollBar->width(), height() - headerHeight());
-    switch (edge) {
-    case Qt::LeftEdge: return QRectF(area.left(), area.top(), area.width() / 2, area.height());
-    case Qt::RightEdge: return QRectF(area.center().x(), area.top(), area.width() / 2, area.height());
-    case Qt::TopEdge: return QRectF(area.left(), area.top(), area.width(), area.height() / 2);
-    default: return QRectF(area.left(), area.center().y(), area.width(), area.height() / 2);
+// --- dragging the pane ------------------------------------------------------------
+
+namespace {
+QPointer<TerminalView> g_dragSource;
+}
+
+TerminalView *TerminalView::dragSource() {
+    return g_dragSource;
+}
+
+void TerminalView::startPaneDrag() {
+    // A small translucent picture of the pane follows the mouse.
+    const QPixmap shot = grab();
+    const qreal scale = std::min({1.0, 240.0 / std::max(1, shot.width()), 150.0 / std::max(1, shot.height())});
+    const QSize size = (QSizeF(shot.size()) * scale).toSize();
+    QPixmap thumb(size);
+    thumb.fill(Qt::transparent);
+    {
+        QPainter p(&thumb);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setRenderHint(QPainter::SmoothPixmapTransform);
+        QPainterPath clip;
+        clip.addRoundedRect(QRectF(QPointF(0, 0), QSizeF(size)), 8, 8);
+        p.setClipPath(clip);
+        p.setOpacity(0.85);
+        p.drawPixmap(thumb.rect(), shot);
+        p.setOpacity(1);
+        p.setClipping(false);
+        p.setPen(QPen(m_theme.cursor, 2));
+        p.drawRoundedRect(QRectF(1, 1, size.width() - 2, size.height() - 2), 8, 8);
     }
-}
 
-void TerminalView::dragEnterEvent(QDragEnterEvent *event) {
-    if (event->mimeData()->hasFormat(QLatin1String(SessionMimeType))) {
-        event->setDropAction(Qt::CopyAction);
-        event->accept();
-    }
-}
-
-void TerminalView::dragMoveEvent(QDragMoveEvent *event) {
-    if (!event->mimeData()->hasFormat(QLatin1String(SessionMimeType))) return;
-    // The closest border wins, measured relative to the pane size.
-    const QPointF p = event->position();
-    const qreal fx = p.x() / std::max(1, width());
-    const qreal fy = (p.y() - headerHeight()) / std::max(1, height() - headerHeight());
-    const qreal left = fx, right = 1 - fx, top = fy, bottom = 1 - fy;
-    const qreal nearest = std::min({left, right, top, bottom});
-    const int edge = nearest == left ? Qt::LeftEdge : nearest == right ? Qt::RightEdge
-                   : nearest == top  ? Qt::TopEdge : Qt::BottomEdge;
-    if (edge != m_dropEdge) {
-        m_dropEdge = edge;
-        update();
-    }
-    event->setDropAction(Qt::CopyAction);
-    event->accept();
-}
-
-void TerminalView::dragLeaveEvent(QDragLeaveEvent *) {
-    m_dropEdge = -1;
-    update();
-}
-
-void TerminalView::dropEvent(QDropEvent *event) {
-    const int edge = m_dropEdge;
-    m_dropEdge = -1;
-    update();
-    const QString data = QString::fromUtf8(event->mimeData()->data(QLatin1String(SessionMimeType)));
-    const QStringList ids = data.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
-    if (ids.isEmpty() || edge < 0) return;
-    // Copy, never Move: the session tree must keep its items.
-    event->setDropAction(Qt::CopyAction);
-    event->accept();
-    Q_EMIT sessionsDropped(ids, Qt::Edge(edge));
+    auto *mime = new QMimeData;
+    mime->setData(QLatin1String(PaneMimeType), QByteArray("1"));
+    auto *drag = new QDrag(this);
+    drag->setMimeData(mime);
+    drag->setPixmap(thumb);
+    drag->setHotSpot(QPoint(size.width() / 2, std::min(16, size.height() / 2)));
+    g_dragSource = this;
+    drag->exec(Qt::MoveAction);
+    g_dragSource = nullptr;
+    m_headerPress = QPoint(-1, -1);
 }

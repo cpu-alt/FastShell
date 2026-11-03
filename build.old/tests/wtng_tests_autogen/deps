@@ -1,0 +1,17 @@
+wtng_tests_autogen/timestamp: \
+	C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/tests/CMakeLists.txt \
+	C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/tests/bench_parser.cpp \
+	C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/tests/test_core.cpp \
+	C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/tests/test_screen.cpp \
+	C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/tests/test_serial.cpp \
+	C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/tests/test_telnet.cpp \
+	C:/msys64/ucrt64/lib/cmake/GTest/GTestConfig.cmake \
+	C:/msys64/ucrt64/lib/cmake/GTest/GTestConfigVersion.cmake \
+	C:/msys64/ucrt64/lib/cmake/GTest/GTestTargets-release.cmake \
+	C:/msys64/ucrt64/lib/cmake/GTest/GTestTargets.cmake \
+	C:/msys64/ucrt64/share/cmake/Modules/CMakeFindDependencyMacro.cmake \
+	C:/msys64/ucrt64/share/cmake/Modules/FindGTest.cmake \
+	C:/msys64/ucrt64/share/cmake/Modules/FindPackageHandleStandardArgs.cmake \
+	C:/msys64/ucrt64/share/cmake/Modules/FindPackageMessage.cmake \
+	C:/msys64/ucrt64/share/cmake/Modules/GoogleTest.cmake \
+	C:/msys64/ucrt64/bin/cmake.exe

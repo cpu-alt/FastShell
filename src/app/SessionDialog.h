@@ -24,6 +24,7 @@ public:
     bool saveRequested() const;
     QString typedPassword() const;  // also used when it is not saved
     void setSaveRequested(bool save);
+    void setType(SessionInfo::Type type);  // for a new session
 
 private:
     void updateVisibility();

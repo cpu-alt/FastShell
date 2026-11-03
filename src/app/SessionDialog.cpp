@@ -21,7 +21,7 @@
 
 namespace {
 
-enum TypeIndex { SshIndex, TelnetIndex, LocalIndex, SerialIndex };
+enum TypeIndex { SshIndex, TelnetIndex, LocalIndex, SerialIndex, RdpIndex };
 const QString PortSeparator = QStringLiteral(" — ");
 
 QWidget *rowWith(QWidget *parent, QWidget *main, QPushButton *button) {
@@ -52,6 +52,7 @@ SessionDialog::SessionDialog(SessionStore *store, QWidget *parent) : QDialog(par
     m_type->addItem(QStringLiteral("Telnet"));
     m_type->addItem(tr("Local shell"));
     m_type->addItem(tr("Serial (COM port)"));
+    m_type->addItem(tr("Remote desktop (RDP)"));
     m_name = new QLineEdit(this);
     m_name->setPlaceholderText(tr("default: user@host"));
     m_folder = new QComboBox(this);
@@ -191,8 +192,11 @@ SessionDialog::SessionDialog(SessionStore *store, QWidget *parent) : QDialog(par
     fillUsers(QString());
     fillProfiles(QString());
     connect(m_type, &QComboBox::currentIndexChanged, this, [this](int index) {
-        if (index == SshIndex && m_port->value() == 23) m_port->setValue(22);
-        if (index == TelnetIndex && m_port->value() == 22) m_port->setValue(23);
+        // Follow the type while the port is still one of the defaults.
+        const int port = m_port->value();
+        if (port == 22 || port == 23 || port == 3389) {
+            m_port->setValue(index == TelnetIndex ? 23 : index == RdpIndex ? 3389 : 22);
+        }
         updateVisibility();
     });
     connect(m_credential, &QComboBox::currentIndexChanged, this, &SessionDialog::updateVisibility);
@@ -247,18 +251,21 @@ void SessionDialog::applyProfile() {
 void SessionDialog::updateVisibility() {
     const int type = typeIndex();
     const bool ssh = type == SshIndex;
-    const bool remote = type == SshIndex || type == TelnetIndex;
+    const bool rdp = type == RdpIndex;
+    const bool remote = type == SshIndex || type == TelnetIndex || rdp;
+    const bool login = ssh || rdp;  // user + password fields
     const bool local = type == LocalIndex;
     const bool serial = type == SerialIndex;
-    const bool sharedUser = ssh && !m_credential->currentData().toString().isEmpty();
+    const bool sharedUser = login && !m_credential->currentData().toString().isEmpty();
 
-    m_form->setRowVisible(m_profileRow, !local);
+    m_form->setRowVisible(m_profileRow, !local && !rdp);
     m_form->setRowVisible(m_host, remote);
     m_form->setRowVisible(m_port, remote);
-    m_form->setRowVisible(m_credentialRow, ssh);
-    m_form->setRowVisible(m_user, ssh && !sharedUser);
-    m_form->setRowVisible(m_password, ssh && !sharedUser);
-    m_form->setRowVisible(m_savePasswordBox, ssh && !sharedUser);
+    m_form->setRowVisible(m_credentialRow, login);
+    m_form->setRowVisible(m_user, login && !sharedUser);
+    m_form->setRowVisible(m_password, login && !sharedUser);
+    m_form->setRowVisible(m_savePasswordBox, login && !sharedUser);
+    m_user->setPlaceholderText(rdp ? tr("user or DOMAIN\\user") : tr("default: current user"));
     m_form->setRowVisible(m_identityRow, ssh && !sharedUser);
     m_form->setRowVisible(m_legacyBox, ssh);
     m_form->setRowVisible(m_programRow, local);
@@ -280,6 +287,7 @@ void SessionDialog::setSession(const SessionInfo &s) {
     m_type->setCurrentIndex(s.type == SessionInfo::Type::Ssh      ? SshIndex
                             : s.type == SessionInfo::Type::Telnet ? TelnetIndex
                             : s.type == SessionInfo::Type::Local  ? LocalIndex
+                            : s.type == SessionInfo::Type::Rdp    ? RdpIndex
                                                                   : SerialIndex);
     fillProfiles(s.profileId);
     fillUsers(s.credentialId);
@@ -327,13 +335,17 @@ SessionInfo SessionDialog::session() const {
     s.type = type == SshIndex      ? SessionInfo::Type::Ssh
            : type == TelnetIndex   ? SessionInfo::Type::Telnet
            : type == LocalIndex    ? SessionInfo::Type::Local
+           : type == RdpIndex      ? SessionInfo::Type::Rdp
                                    : SessionInfo::Type::Serial;
+    const bool login = s.type == SessionInfo::Type::Ssh || s.type == SessionInfo::Type::Rdp;
     s.folder = m_folder->currentText();
-    s.profileId = s.type == SessionInfo::Type::Local ? QString() : m_profile->currentData().toString();
+    s.profileId = s.type == SessionInfo::Type::Local || s.type == SessionInfo::Type::Rdp
+                    ? QString()
+                    : m_profile->currentData().toString();
 
     s.host = m_host->text().trimmed();
     s.port = m_port->value();
-    if (s.type == SessionInfo::Type::Ssh) {
+    if (login) {
         s.credentialId = m_credential->currentData().toString();
     }
     if (s.credentialId.isEmpty()) {
@@ -343,7 +355,7 @@ SessionInfo SessionDialog::session() const {
             s.user = s.host.left(at);
             s.host = s.host.mid(at + 1);
         }
-        if (s.type == SessionInfo::Type::Ssh && m_savePasswordBox->isChecked()) {
+        if (login && m_savePasswordBox->isChecked()) {
             if (!m_password->text().isEmpty()) s.setPassword(m_password->text());
             else s.protectedPassword = m_keptPassword;
         }
@@ -387,6 +399,14 @@ QString SessionDialog::typedPassword() const {
 
 bool SessionDialog::saveRequested() const {
     return m_saveBox->isChecked();
+}
+
+void SessionDialog::setType(SessionInfo::Type type) {
+    m_type->setCurrentIndex(type == SessionInfo::Type::Telnet  ? TelnetIndex
+                            : type == SessionInfo::Type::Local ? LocalIndex
+                            : type == SessionInfo::Type::Serial ? SerialIndex
+                            : type == SessionInfo::Type::Rdp    ? RdpIndex
+                                                                : SshIndex);
 }
 
 void SessionDialog::setSaveRequested(bool save) {

@@ -58,6 +58,7 @@ QString typeKey(SessionInfo::Type t) {
     case SessionInfo::Type::Local: return QStringLiteral("local");
     case SessionInfo::Type::Telnet: return QStringLiteral("telnet");
     case SessionInfo::Type::Serial: return QStringLiteral("serial");
+    case SessionInfo::Type::Rdp: return QStringLiteral("rdp");
     default: return QStringLiteral("ssh");
     }
 }
@@ -66,6 +67,7 @@ SessionInfo::Type typeFromKey(const QString &key) {
     if (key == QLatin1String("local")) return SessionInfo::Type::Local;
     if (key == QLatin1String("telnet")) return SessionInfo::Type::Telnet;
     if (key == QLatin1String("serial")) return SessionInfo::Type::Serial;
+    if (key == QLatin1String("rdp")) return SessionInfo::Type::Rdp;
     return SessionInfo::Type::Ssh;
 }
 
@@ -130,7 +132,7 @@ SessionInfo sessionFromJson(const QJsonObject &o) {
     for (const QJsonValue &a : o.value(QStringLiteral("arguments")).toArray()) s.arguments << a.toString();
     s.workingDirectory = o.value(QStringLiteral("workingDirectory")).toString();
     s.host = o.value(QStringLiteral("host")).toString();
-    s.port = o.value(QStringLiteral("port")).toInt(s.type == SessionInfo::Type::Telnet ? 23 : 22);
+    s.port = o.value(QStringLiteral("port")).toInt(SessionInfo::defaultPort(s.type));
     s.user = o.value(QStringLiteral("user")).toString();
     s.identityFile = o.value(QStringLiteral("identityFile")).toString();
     s.protectedPassword = o.value(QStringLiteral("password")).toString().toLatin1();
@@ -217,7 +219,16 @@ QString SessionInfo::typeName() const {
     case Type::Local: return QStringLiteral("Shell");
     case Type::Telnet: return QStringLiteral("Telnet");
     case Type::Serial: return QStringLiteral("Serial");
+    case Type::Rdp: return QStringLiteral("RDP");
     default: return QStringLiteral("SSH");
+    }
+}
+
+int SessionInfo::defaultPort(Type type) {
+    switch (type) {
+    case Type::Telnet: return 23;
+    case Type::Rdp: return 3389;
+    default: return 22;
     }
 }
 
@@ -719,16 +730,19 @@ std::optional<SessionInfo> SessionStore::parseQuickConnect(const QString &input)
     }
 
     static const QRegularExpression remote(
-        QStringLiteral(R"(^(?:(ssh|telnet)(?:\s+|://))?(?:([^\s@]+)@)?(\[[0-9a-fA-F:]+\]|[^\s:@/\[\]]+)(?::(\d{1,5}))?/?$)"),
+        QStringLiteral(R"(^(?:(ssh|telnet|rdp)(?:\s+|://))?(?:([^\s@]+)@)?(\[[0-9a-fA-F:]+\]|[^\s:@/\[\]]+)(?::(\d{1,5}))?/?$)"),
         QRegularExpression::CaseInsensitiveOption);
     const auto m = remote.match(text);
     if (!m.hasMatch()) return std::nullopt;
-    const bool telnet = m.captured(1).compare(QLatin1String("telnet"), Qt::CaseInsensitive) == 0;
-    s.type = telnet ? SessionInfo::Type::Telnet : SessionInfo::Type::Ssh;
+    const QString scheme = m.captured(1).toLower();
+    const bool telnet = scheme == QLatin1String("telnet");
+    s.type = telnet ? SessionInfo::Type::Telnet
+           : scheme == QLatin1String("rdp") ? SessionInfo::Type::Rdp
+                                            : SessionInfo::Type::Ssh;
     s.user = telnet ? QString() : m.captured(2);
     s.host = m.captured(3);
     if (s.host.startsWith(QLatin1Char('['))) s.host = s.host.mid(1, s.host.size() - 2);  // [IPv6]
-    s.port = m.captured(4).isEmpty() ? (telnet ? 23 : 22) : m.captured(4).toInt();
+    s.port = m.captured(4).isEmpty() ? SessionInfo::defaultPort(s.type) : m.captured(4).toInt();
     if (s.port < 1 || s.port > 65535) return std::nullopt;
     return s;
 }

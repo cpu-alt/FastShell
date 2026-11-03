@@ -20,7 +20,7 @@ public:
     SessionPanel(SessionStore *store, QWidget *parent = nullptr);
 
     // Opens the editor for a new session; saves and/or connects it.
-    void newSession(const QString &folder = QString());
+    void newSession(const QString &folder = QString(), SessionInfo::Type type = SessionInfo::Type::Ssh);
 
 Q_SIGNALS:
     // password is a one-off password typed in the dialog but not saved.

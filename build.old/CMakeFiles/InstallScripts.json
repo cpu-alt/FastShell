@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/build/cmake_install.cmake",
+		"C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/build/src/cmake_install.cmake",
+		"C:/Users/Patrizio/Desktop/Wind/WindTerm-NG/build/tests/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

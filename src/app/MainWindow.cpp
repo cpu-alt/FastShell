@@ -7,6 +7,9 @@
 #include <QDateTime>
 #include <QFileInfo>
 #include <QDockWidget>
+#include <QDragEnterEvent>
+#include <QMimeData>
+#include <QMouseEvent>
 #include <QFontDialog>
 #include <QInputDialog>
 #include <QLabel>
@@ -17,6 +20,7 @@
 #include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
+#include <QToolBar>
 #include <QToolButton>
 
 #include "app/FilerPanel.h"
@@ -24,7 +28,9 @@
 #include "app/Logo.h"
 #include "app/ManageDialogs.h"
 #include "app/Panels.h"
+#include "app/RdpView.h"
 #include "app/SessionPanel.h"
+#include "app/Style.h"
 #include "app/TabPage.h"
 #include "app/TerminalView.h"
 #include "net/SftpClient.h"
@@ -86,10 +92,21 @@ MainWindow::MainWindow(QWidget *parent)
     m_tabs->setElideMode(Qt::ElideRight);
     m_tabs->tabBar()->setExpanding(false);
     m_tabs->tabBar()->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_tabs->tabBar()->setDrawBase(false);
+    m_tabs->tabBar()->setAcceptDrops(true);  // hover a tab while dragging a pane to switch to it
+    m_tabs->tabBar()->installEventFilter(this);
+    m_tabs->tabBar()->setToolTip(tr("Drag a tab onto a terminal to show both side by side"));
+    m_tabHoverTimer = new QTimer(this);
+    m_tabHoverTimer->setSingleShot(true);
+    m_tabHoverTimer->setInterval(450);
+    connect(m_tabHoverTimer, &QTimer::timeout, this, [this] {
+        if (m_tabHoverIndex >= 0 && m_tabHoverIndex < m_tabs->count()) m_tabs->setCurrentIndex(m_tabHoverIndex);
+    });
     setCentralWidget(m_tabs);
 
     auto *plus = new QToolButton(this);
-    plus->setText(QStringLiteral(" + "));
+    plus->setIcon(style::icon(style::Glyph::Terminal));
+    plus->setIconSize(QSize(18, 18));
     plus->setAutoRaise(true);
     plus->setToolTip(tr("New local tab (Ctrl+Shift+T)"));
     plus->setPopupMode(QToolButton::MenuButtonPopup);
@@ -105,7 +122,11 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_tabs, &QTabWidget::currentChanged, this, [this] {
         if (TerminalView *view = current()) {
             view->setFocus();
+        }
+        if (m_tabs->count() > 0) {
             setWindowTitle(m_tabs->tabText(m_tabs->currentIndex()) + QStringLiteral(" - EMF Hexa"));
+        } else {
+            setWindowTitle(QStringLiteral("EMF Hexa"));
         }
         updatePanels();
         updateStatus();
@@ -118,6 +139,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     createDocks();
     createMenus();
+    createToolBar();
     createStatusBar();
 
     // A window saved before the panels existed would be too small for them.
@@ -187,6 +209,8 @@ void MainWindow::createMenus() {
     QMenu *session = menuBar()->addMenu(tr("&Session"));
     add(session, tr("New session..."), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N), [this] { m_sessionPanel->newSession(); });
     add(session, tr("New local tab"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_T), [this] { newLocalTab(); });
+    add(session, tr("New remote desktop..."), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R),
+        [this] { m_sessionPanel->newSession(QString(), SessionInfo::Type::Rdp); });
     QMenu *shells = session->addMenu(tr("New shell"));
     for (const SessionInfo &s : m_store->detectedShells()) {
         shells->addAction(icons::session(s), s.name, this, [this, s] { openSession(s); });
@@ -302,6 +326,46 @@ void MainWindow::createMenus() {
     });
 }
 
+void MainWindow::createToolBar() {
+    auto *bar = new QToolBar(tr("Toolbar"), this);
+    bar->setObjectName(QStringLiteral("mainToolBar"));
+    bar->setMovable(false);
+    bar->setIconSize(QSize(20, 20));
+    bar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+    addToolBar(Qt::TopToolBarArea, bar);
+
+    auto action = [this, bar](style::Glyph glyph, const QString &tip, auto slot) {
+        QAction *a = bar->addAction(style::icon(glyph), tip);
+        a->setToolTip(tip);
+        connect(a, &QAction::triggered, this, slot);
+        return a;
+    };
+    action(style::Glyph::NewSession, tr("New session (Ctrl+Shift+N)"), [this] { m_sessionPanel->newSession(); });
+    QAction *local = action(style::Glyph::Terminal, tr("New local tab (Ctrl+Shift+T)"), [this] { newLocalTab(); });
+    auto *shellMenu = new QMenu(this);
+    for (const SessionInfo &s : m_store->detectedShells()) {
+        shellMenu->addAction(icons::session(s), s.name, this, [this, s] { openSession(s); });
+    }
+    local->setMenu(shellMenu);
+    if (auto *button = qobject_cast<QToolButton *>(bar->widgetForAction(local))) {
+        button->setPopupMode(QToolButton::MenuButtonPopup);
+    }
+    action(style::Glyph::RemoteDesktop, tr("New remote desktop (Ctrl+Shift+R)"),
+           [this] { m_sessionPanel->newSession(QString(), SessionInfo::Type::Rdp); });
+    bar->addSeparator();
+    action(style::Glyph::SplitRight, tr("Split right (Ctrl+Shift+E)"), [this] { splitCurrent(Qt::Horizontal); });
+    action(style::Glyph::SplitDown, tr("Split down (Ctrl+Shift+O)"), [this] { splitCurrent(Qt::Vertical); });
+    m_broadcastAction->setIcon(style::icon(style::Glyph::Broadcast));
+    bar->addAction(m_broadcastAction);
+
+    auto *spacer = new QWidget(bar);
+    spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    bar->addWidget(spacer);
+    auto *hint = new QLabel(tr("Tip: drag a tab or a pane title onto a terminal to split"), bar);
+    hint->setStyleSheet(QStringLiteral("color:#6C7380; padding-right: 8px"));
+    bar->addWidget(hint);
+}
+
 void MainWindow::createStatusBar() {
     m_statusMessage = new QLabel(tr("Ready"), this);
     m_statusCursor = new QLabel(this);
@@ -346,6 +410,10 @@ void MainWindow::updateStatus() {
         m_statusSize->clear();
         m_statusType->clear();
         m_statusMessage->setText(tr("Ready"));
+        if (RdpView *rdp = rdpAt(m_tabs->currentIndex())) {
+            m_statusType->setText(QStringLiteral("RDP %1").arg(rdp->options().host));
+            m_statusMessage->setText(rdp->isConnected() ? tr("Connected") : tr("Not connected"));
+        }
         return;
     }
     const QPoint cursor = view->cursorPosition();
@@ -448,6 +516,9 @@ TerminalView *MainWindow::createView(const SessionInfo &session, const QString &
         };
         break;
     }
+    case SessionInfo::Type::Rdp:
+        Q_ASSERT_X(false, "createView", "remote desktops are not terminals: use openRemoteDesktop()");
+        return nullptr;
     }
 
     SessionInfo shown = session;
@@ -458,9 +529,6 @@ TerminalView *MainWindow::createView(const SessionInfo &session, const QString &
     applyViewOptions(view);
     view->setBackspaceSendsCtrlH(session.backspaceCtrlH);
     view->setPaneInfo(shown.name, icons::sessionColor(shown));
-    connect(view, &TerminalView::sessionsDropped, this, [this, view](const QStringList &ids, Qt::Edge edge) {
-        dropSessions(view, ids, edge);
-    });
     m_sessions.insert(view, shown);
     connect(view, &QObject::destroyed, this, [this, view] {
         m_sessions.remove(view);
@@ -505,7 +573,7 @@ void MainWindow::refreshTabTitle(TabPage *page) {
     }
 }
 
-void MainWindow::addPage(TabPage *page, const SessionInfo &first) {
+void MainWindow::addPage(TabPage *page, const SessionInfo &first, bool startViews) {
     connect(page, &TabPage::activeViewChanged, this, [this, page] {
         refreshTabTitle(page);
         if (pageAt(m_tabs->currentIndex()) == page) {
@@ -515,20 +583,74 @@ void MainWindow::addPage(TabPage *page, const SessionInfo &first) {
     });
     connect(page, &TabPage::panesChanged, this, [this, page] { refreshTabTitle(page); });
     connect(page, &TabPage::empty, this, [this, page] { closeTab(m_tabs->indexOf(page)); });
+    connect(page, &TabPage::sessionsDropped, this,
+            [this, page](TerminalView *target, const QStringList &ids, Qt::Edge edge) {
+                dropSessions(page, target, ids, edge);
+            });
     const int index = m_tabs->addTab(page, icons::session(first), first.name);
+    addCloseButton(page);
     m_tabs->setCurrentIndex(index);
     refreshTabTitle(page);
-    for (TerminalView *view : page->views()) {
-        QTimer::singleShot(0, view, &TerminalView::start);  // once laid out, at its real size
+    if (startViews) {
+        for (TerminalView *view : page->views()) {
+            QTimer::singleShot(0, view, &TerminalView::start);  // once laid out, at its real size
+        }
     }
     if (TerminalView *active = page->activeView()) active->setFocus();
 }
 
 void MainWindow::openSession(const SessionInfo &session, const QString &password) {
+    if (session.type == SessionInfo::Type::Rdp) {
+        openRemoteDesktop(session, password);
+        return;
+    }
     addPage(new TabPage(createView(session, password)), session);
 }
 
-void MainWindow::openSideBySide(const QList<SessionInfo> &sessions) {
+void MainWindow::addCloseButton(QWidget *page) {
+    auto *button = new QToolButton(m_tabs->tabBar());
+    button->setObjectName(QStringLiteral("tabClose"));
+    button->setIcon(style::icon(style::Glyph::Close));
+    button->setIconSize(QSize(12, 12));
+    button->setFixedSize(18, 18);
+    button->setToolTip(tr("Close tab"));
+    button->setCursor(Qt::ArrowCursor);
+    connect(button, &QToolButton::clicked, this, [this, page] { closeTab(m_tabs->indexOf(page)); });
+    m_tabs->tabBar()->setTabButton(m_tabs->indexOf(page), QTabBar::RightSide, button);
+}
+
+RdpView *MainWindow::rdpAt(int index) const {
+    return qobject_cast<RdpView *>(m_tabs->widget(index));
+}
+
+// A remote desktop takes a whole tab: it cannot be split like terminals.
+void MainWindow::openRemoteDesktop(const SessionInfo &session, const QString &password) {
+    RdpView::Options options;
+    options.host = session.host;
+    options.port = session.port > 0 ? session.port : SessionInfo::defaultPort(SessionInfo::Type::Rdp);
+    options.user = session.user;
+    options.password = password.isEmpty() ? session.password() : password;
+    options.name = session.name;
+    if (const Credential *c = m_store->findCredential(session.credentialId)) {
+        options.user = c->user;
+        options.password = password.isEmpty() ? c->password() : password;
+    }
+    auto *view = new RdpView(options);
+    const int index = m_tabs->addTab(view, icons::session(session), session.name);
+    addCloseButton(view);
+    m_tabs->setTabToolTip(index, QStringLiteral("RDP %1:%2").arg(options.host).arg(options.port));
+    if (session.color.isValid()) m_tabs->tabBar()->setTabTextColor(index, session.color);
+    connect(view, &RdpView::statusChanged, this, [this] { updateStatus(); });
+    m_tabs->setCurrentIndex(index);
+}
+
+void MainWindow::openSideBySide(const QList<SessionInfo> &all) {
+    // Remote desktops get their own tabs; the terminals share one.
+    QList<SessionInfo> sessions;
+    for (const SessionInfo &s : all) {
+        if (s.type == SessionInfo::Type::Rdp) openRemoteDesktop(s, QString());
+        else sessions << s;
+    }
     if (sessions.isEmpty()) return;
     if (sessions.size() > 16 && QMessageBox::question(this, tr("Open side by side"),
                                                        tr("Open %1 sessions in one tab?").arg(sessions.size()))
@@ -552,7 +674,7 @@ void MainWindow::setBroadcastCurrent(bool on) {
 void MainWindow::splitCurrent(Qt::Orientation orientation, const SessionInfo *session, const QString &password) {
     TerminalView *active = current();
     TabPage *page = active ? pageOf(active) : nullptr;
-    if (!page) {
+    if (!page || (session && session->type == SessionInfo::Type::Rdp)) {
         if (session) openSession(*session, password);
         else newLocalTab();
         return;
@@ -578,7 +700,7 @@ void MainWindow::closePane() {
 }
 
 void MainWindow::closeTab(int index) {
-    TabPage *page = pageAt(index);
+    QWidget *page = m_tabs->widget(index);  // a TabPage, or an RdpView
     if (!page) return;
     m_tabs->removeTab(index);
     page->deleteLater();  // its views (and their SFTP clients) go with it
@@ -589,6 +711,20 @@ void MainWindow::closeTab(int index) {
 
 void MainWindow::showTabMenu(const QPoint &pos) {
     const int index = m_tabs->tabBar()->tabAt(pos);
+    if (RdpView *rdp = rdpAt(index)) {
+        m_tabs->setCurrentIndex(index);
+        QMenu menu(this);
+        if (rdp->isConnected()) {
+            menu.addAction(tr("Disconnect"), rdp, &RdpView::disconnectFromHost);
+        } else if (RdpView::embeddedAvailable()) {
+            menu.addAction(tr("Connect"), rdp, &RdpView::connectToHost);
+        }
+        menu.addAction(tr("Open in the system Remote Desktop client"), rdp, &RdpView::openExternally);
+        menu.addSeparator();
+        menu.addAction(tr("Close tab"), this, [this, rdp] { closeTab(m_tabs->indexOf(rdp)); });
+        menu.exec(m_tabs->tabBar()->mapToGlobal(pos));
+        return;
+    }
     TabPage *page = pageAt(index);
     if (!page) return;
     m_tabs->setCurrentIndex(index);
@@ -671,22 +807,118 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     QMainWindow::closeEvent(event);
 }
 
-// Sessions dragged from the tree and dropped on one side of a pane open
-// right there, in the same tab.
-void MainWindow::dropSessions(TerminalView *target, const QStringList &ids, Qt::Edge edge) {
-    TabPage *page = pageOf(target);
-    if (!page) return;
-    const Qt::Orientation orientation =
-        (edge == Qt::LeftEdge || edge == Qt::RightEdge) ? Qt::Horizontal : Qt::Vertical;
-    const bool before = edge == Qt::LeftEdge || edge == Qt::TopEdge;
+// Sessions dragged from the tree and dropped on one side of a pane (or of
+// the whole tab, target = null) open right there, in the same tab.
+void MainWindow::dropSessions(TabPage *page, TerminalView *target, const QStringList &ids, Qt::Edge edge) {
     TerminalView *anchor = target;
     for (const QString &id : ids) {
         const SessionInfo *s = m_store->find(id);
         if (!s) continue;
+        if (s->type == SessionInfo::Type::Rdp) {  // a desktop takes its own tab
+            openRemoteDesktop(*s, QString());
+            continue;
+        }
         TerminalView *view = createView(*s, QString());
-        page->split(anchor, view, orientation, before);
+        page->place(view, anchor, edge);
         QTimer::singleShot(0, view, &TerminalView::start);
         anchor = view;  // several sessions line up in the same direction
     }
     refreshTabTitle(page);
+}
+
+// A pane dropped on the tab bar leaves its tab for a new one of its own.
+void MainWindow::detachToNewTab(TerminalView *view) {
+    TabPage *from = pageOf(view);
+    if (!from || from->count() < 2) return;  // already alone in its tab
+    from->release(view);
+    refreshTabTitle(from);
+    addPage(new TabPage(view), m_sessions.value(view), false);  // keeps running
+}
+
+// The tab bar: a tab dragged down out of the bar becomes a pane drag (drop it
+// on a terminal to show both side by side), and while a pane or a session is
+// dragged, resting on a tab switches to it.
+bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
+    if (watched == m_tabs->tabBar() && tabBarDragEvent(event)) return true;
+    return QMainWindow::eventFilter(watched, event);
+}
+
+bool MainWindow::tabBarDragEvent(QEvent *event) {
+    QTabBar *bar = m_tabs->tabBar();
+    switch (event->type()) {
+    case QEvent::MouseButtonPress: {
+        auto *e = static_cast<QMouseEvent *>(event);
+        if (e->button() == Qt::LeftButton) {
+            m_tabPressPos = e->position().toPoint();
+            m_tabPressIndex = bar->tabAt(m_tabPressPos);
+        }
+        return false;
+    }
+    case QEvent::MouseButtonRelease:
+        m_tabPressIndex = -1;
+        return false;
+    case QEvent::MouseMove: {
+        auto *e = static_cast<QMouseEvent *>(event);
+        if (m_tabPressIndex < 0 || !(e->buttons() & Qt::LeftButton)) return false;
+        // Sideways moves reorder the tabs (QTabBar); only pulling the tab
+        // down out of the bar starts a drag.
+        const QPoint pos = e->position().toPoint();
+        if (pos.y() < bar->height() + 12) return false;
+        TabPage *page = pageAt(m_tabPressIndex);
+        m_tabPressIndex = -1;
+        TerminalView *view = page ? page->activeView() : nullptr;
+        if (!view) return false;
+        // End the tab bar's own move first, as if the mouse were released.
+        QMouseEvent release(QEvent::MouseButtonRelease, QPointF(m_tabPressPos), e->globalPosition(), Qt::LeftButton,
+                            Qt::NoButton, e->modifiers());
+        QCoreApplication::sendEvent(bar, &release);
+        view->startPaneDrag();
+        return true;
+    }
+    case QEvent::DragEnter:
+    case QEvent::DragMove: {
+        auto *e = static_cast<QDragMoveEvent *>(event);
+        const QMimeData *mime = e->mimeData();
+        const bool pane = mime->hasFormat(QLatin1String(PaneMimeType)) && TerminalView::dragSource();
+        if (!pane && !mime->hasFormat(QLatin1String(SessionMimeType))) return false;
+        const int index = bar->tabAt(e->position().toPoint());
+        if (index != m_tabHoverIndex) {
+            m_tabHoverIndex = index;
+            if (index >= 0 && index != m_tabs->currentIndex()) m_tabHoverTimer->start();
+            else m_tabHoverTimer->stop();
+        }
+        // Dropped on the bar itself: a pane gets its own tab, sessions open in new tabs.
+        e->setDropAction(pane ? Qt::MoveAction : Qt::CopyAction);
+        e->accept();
+        return true;
+    }
+    case QEvent::DragLeave:
+        m_tabHoverTimer->stop();
+        m_tabHoverIndex = -1;
+        return true;
+    case QEvent::Drop: {
+        auto *e = static_cast<QDropEvent *>(event);
+        m_tabHoverTimer->stop();
+        m_tabHoverIndex = -1;
+        const QMimeData *mime = e->mimeData();
+        if (mime->hasFormat(QLatin1String(PaneMimeType)) && TerminalView::dragSource()) {
+            e->setDropAction(Qt::MoveAction);
+            e->accept();
+            detachToNewTab(TerminalView::dragSource());
+            return true;
+        }
+        if (mime->hasFormat(QLatin1String(SessionMimeType))) {
+            e->setDropAction(Qt::CopyAction);
+            e->accept();
+            const QString data = QString::fromUtf8(mime->data(QLatin1String(SessionMimeType)));
+            for (const QString &id : data.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
+                if (const SessionInfo *s = m_store->find(id)) openSession(*s);
+            }
+            return true;
+        }
+        return false;
+    }
+    default:
+        return false;
+    }
 }

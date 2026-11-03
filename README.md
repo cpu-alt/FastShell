@@ -55,13 +55,18 @@ bleu éclairé, face en creux avec reflet), avec une invite de terminal `>` et u
   L'import n'écrase jamais rien : il ajoute les sessions dans le dossier choisi. Il réutilise un
   utilisateur partagé identique et demande le mot de passe d'export si besoin, sinon il importe
   sans les mots de passe.
-- **Plusieurs sessions côte à côte**, trois façons :
-  1. **glisser-déposer** une session de l'arbre sur un terminal : une zone bleue « Open here »
-     montre où elle s'ouvrira (moitié gauche, droite, haut ou bas du panneau visé) ;
+- **Plusieurs sessions côte à côte**, plusieurs façons :
+  1. **glisser-déposer** une session de l'arbre, **un onglet** (tiré vers le bas hors de la barre
+     d'onglets) ou **un panneau** (par sa barre de titre) sur un terminal : un aperçu bleu animé,
+     comme l'aimantation des fenêtres Windows, montre où il va se placer (moitié gauche, droite,
+     haut ou bas du panneau visé ; au centre d'un panneau du même onglet, les deux s'échangent ;
+     contre un bord de l'onglet, il prend tout ce côté). Pendant le glisser, rester une demi-seconde
+     sur un autre onglet l'affiche ; lâcher un panneau sur la barre d'onglets le remet dans son
+     propre onglet. Le terminal déplacé reste connecté ;
   2. sélectionner plusieurs sessions (Ctrl+clic) → « Open N sessions side by side », ou clic droit
      sur un dossier → « Open all side by side » : grille automatique (2 → côte à côte, 4 → 2×2…) ;
   3. en ligne de commande : `EMFHexa.exe --side-by-side admin@10.0.0.1 admin@10.0.0.2`
-     (accepte aussi `telnet hôte`, `"COM3 115200"` et `local`).
+     (accepte aussi `telnet hôte`, `rdp hôte`, `"COM3 115200"` et `local`).
 
   Chaque panneau a sa barre de titre (couleur et nom de la session, □ pour l'agrandir seul dans
   l'onglet, double-clic aussi, × pour le fermer). L'onglet affiche les noms : « sw1 · sw2 (+1) ».
@@ -69,9 +74,22 @@ bleu éclairé, face en creux avec reflet), avec une invite de terminal `>` et u
   part vers toutes les sessions de l'onglet, pratique pour envoyer la même commande à plusieurs
   switchs. Un cadre orange et un bandeau dans la barre d'état le signalent.
 - **Connexion rapide** : champ en haut du panneau Session. Tapez `admin@10.0.0.1`,
-  `switch01:2222`, `telnet 10.0.0.5` ou `COM3 115200` puis Entrée, sans enregistrer de session.
+  `switch01:2222`, `telnet 10.0.0.5`, `rdp admin@10.0.0.20` ou `COM3 115200` puis Entrée, sans
+  enregistrer de session.
+- **Bureau à distance (RDP)** : type de session « Remote desktop (RDP) » (Session → New remote
+  desktop, Ctrl+Shift+R, ou le bouton écran de la barre d'outils). Le bureau s'affiche dans un
+  onglet, avec le moteur de Bureau à distance de Windows (contrôle `mstscax.dll`, le même que
+  mstsc) : utilisateur `DOMAINE\utilisateur` accepté, presse-papiers partagé, le bureau suit la
+  taille de l'onglet. Clic droit sur l'onglet : se déconnecter / reconnecter, ou ouvrir la même
+  session dans mstsc. Il faut Qt ActiveQt à la compilation (voir plus bas) ; sans lui, l'onglet
+  propose d'ouvrir la session dans mstsc.
 
 ### Interface
+
+Thème sombre moderne : onglets arrondis reliés au terminal, barre d'outils à icônes (nouvelle
+session, onglet local, bureau à distance, coupures, taper partout), menus et champs arrondis,
+barres de défilement fines, police Segoe UI Variable, et barre de titre Windows sombre aux
+couleurs de l'app (coins arrondis sous Windows 11).
 
 - **Session** (à droite) : sessions enregistrées rangées dans des dossiers et sous-dossiers.
   Clic droit pour créer, modifier, dupliquer, renommer ou supprimer ; glisser-déposer pour
@@ -127,6 +145,7 @@ bleu éclairé, face en creux avec reflet), avec une invite de terminal `>` et u
 | --- | --- |
 | Nouvel onglet local | Ctrl+Shift+T |
 | Nouvelle session (enregistrée ou non) | Ctrl+Shift+N |
+| Nouveau bureau à distance (RDP) | Ctrl+Shift+R |
 | Dupliquer l'onglet | Ctrl+Shift+D |
 | Couper à droite / en bas | Ctrl+Shift+E / Ctrl+Shift+O |
 | Aller au panneau voisin | Ctrl+Alt+flèches |
@@ -175,8 +194,11 @@ principales optimisations :
 ### Windows (MSYS2)
 
 ```bash
-pacman -S --needed mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,qt6-base,libssh,gtest}
+pacman -S --needed mingw-w64-ucrt-x86_64-{gcc,cmake,ninja,qt6-base,qt6-serialport,qt6-activeqt,libssh,gtest}
 ```
+
+`qt6-activeqt` sert au bureau à distance dans les onglets ; sans lui, la compilation passe et
+les sessions RDP s'ouvrent dans mstsc.
 
 ```bash
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release

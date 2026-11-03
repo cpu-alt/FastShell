@@ -25,8 +25,8 @@ cmake --build build                                        # doit finir sans war
   `lto-wrapper` de LTO.
 - Le benchmark de l'analyseur doit rester vers ~100 Mio/s. Mesurer avant de garder une
   « optimisation » : recycler la mémoire des lignes s'est révélé plus lent (cache froid).
-- Paquets MSYS2 utilisés : gcc, cmake, ninja, qt6-base, qt6-serialport, libssh (0.12),
-  gtest, openssl.
+- Paquets MSYS2 utilisés : gcc, cmake, ninja, qt6-base, qt6-serialport, qt6-activeqt
+  (facultatif : RDP dans les onglets, `WTNG_HAVE_AXRDP`), libssh (0.12), gtest, openssl.
 
 ## Livrer dans `dist/`
 
@@ -55,7 +55,9 @@ src/app/       MainWindow, TabPage (splits/grille/broadcast), TerminalView (rend
                souris, en-tête de panneau, glisser-déposer), SessionStore (JSON + DPAPI,
                import/export, connexion rapide), SessionPanel, SessionDialog, ManageDialogs
                (utilisateurs partagés, profils/étiquettes), FilerPanel, Panels (Outline,
-               Transfer, commandes rapides), Logo.h (logo dessiné en code), Icons.h, main.cpp
+               Transfer, commandes rapides), Logo.h (logo dessiné en code), Icons.h, main.cpp,
+               Style (thème QSS, icônes de la barre d'outils, barre de titre DWM), DropPreview
+               (aperçu « snap » du glisser-déposer), RdpView (bureau à distance, ActiveX mstscax)
 tests/         GoogleTest
 tools/         make_icon.cpp : régénère assets/emfhexa.ico et docs/logo.png depuis Logo.h
 ../WindTerm/   clone d'origine de kingToolbox/WindTerm, à ne pas modifier (référence)
@@ -91,6 +93,9 @@ nom (`WindTermNG`) tant qu'EMF Hexa n'a aucune session.
   démarrent via `QTimer::singleShot(0, ...)` une fois mis en page.
 - **Focus après reparentage** : déplacer un widget focalisé dans un nouveau QSplitter lui
   fait perdre le focus ; donner le focus au nouveau panneau après la mise en page.
+- **Glisser-déposer des panneaux** : c'est `TabPage` qui reçoit les dépôts (les `TerminalView`
+  n'acceptent pas les drops). Le DragEnter doit toujours être accepté, même au-dessus du panneau
+  glissé, sinon Qt n'envoie plus les DragMove suivants.
 - **QTreeWidget en InternalMove** : un dépôt externe doit être accepté en `CopyAction`,
   sinon l'arbre supprime ses éléments.
 - **Windows PowerShell 5.1** ignore les touches tapées avant la fin de son chargement :
@@ -111,7 +116,8 @@ L'outil computer-use ne reconnaît pas EMFHexa.exe (pas dans le menu Démarrer).
 
 ## Non testé à ce jour
 
-Connexion SSH/SFTP complète sur un vrai serveur (seule la négociation de clé a été validée
+Le bureau à distance intégré (contrôle ActiveX, jamais lancé sur un vrai serveur RDP),
+connexion SSH/SFTP complète sur un vrai serveur (seule la négociation de clé a été validée
 sur le switch A41-SW-01), port série réel, UnixPty, et plusieurs interactions souris
 (glisser-déposer, boutons □/× des panneaux, menus contextuels, dialogues). Le dire quand
 c'est pertinent plutôt que de supposer que ça marche.

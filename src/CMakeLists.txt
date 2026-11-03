@@ -49,11 +49,25 @@ qt_add_executable(windterm-ng WIN32 MACOSX_BUNDLE
     app/Panels.h app/Panels.cpp
     app/ManageDialogs.h app/ManageDialogs.cpp
     app/TabPage.h app/TabPage.cpp
+    app/DropPreview.h app/DropPreview.cpp
+    app/RdpView.h app/RdpView.cpp
+    app/Style.h app/Style.cpp
     app/Icons.h
     app/Logo.h
     app/Theme.h)
 if(WIN32)
-    target_link_libraries(windterm-ng PRIVATE crypt32)
+    # dwmapi: dark title bar and Windows 11 backdrop (Style.cpp).
+    target_link_libraries(windterm-ng PRIVATE crypt32 dwmapi)
+    # Remote desktop inside the tabs needs Qt ActiveQt (MSYS2 package
+    # mingw-w64-ucrt-x86_64-qt6-activeqt). Without it, RDP sessions open in mstsc.
+    find_package(Qt6 QUIET COMPONENTS AxContainer)
+    if(TARGET Qt6::AxContainer)
+        target_link_libraries(windterm-ng PRIVATE Qt6::AxContainer)
+        target_compile_definitions(windterm-ng PRIVATE WTNG_HAVE_AXRDP)
+        message(STATUS "Remote desktop: embedded (Qt ActiveQt found)")
+    else()
+        message(STATUS "Remote desktop: external mstsc only (install qt6-activeqt to embed it)")
+    endif()
 endif()
 target_link_libraries(windterm-ng PRIVATE wtterminal wtbackends wtwidgets)
 set_target_properties(windterm-ng PROPERTIES OUTPUT_NAME "EMFHexa")

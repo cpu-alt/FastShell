@@ -293,17 +293,18 @@ void SessionPanel::openItem(QTreeWidgetItem *item) {
     }
 }
 
-void SessionPanel::newSession(const QString &folder) {
+void SessionPanel::newSession(const QString &folder, SessionInfo::Type type) {
     SessionDialog dialog(m_store, this);
     SessionInfo seed;
     seed.folder = folder;
-    seed.type = SessionInfo::Type::Ssh;
-    dialog.setWindowTitle(tr("New session"));
+    seed.type = type;
+    dialog.setWindowTitle(type == SessionInfo::Type::Rdp ? tr("New remote desktop") : tr("New session"));
     // setSession() would hide the "save" checkbox; only pre-fill the folder.
     if (!folder.isEmpty()) {
         dialog.setSession(seed);
         dialog.setWindowTitle(tr("New session"));
     }
+    dialog.setType(type);
     if (dialog.exec() != QDialog::Accepted) return;
     SessionInfo s = dialog.session();
     s.id.clear();
