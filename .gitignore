@@ -1,3 +1,16 @@
+<<<<<<< HEAD
 build/
 .cache/
 compile_commands.json
+=======
+node_modules/
+dist/
+build/
+.env
+.env.*
+*.log
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+>>>>>>> cd076a17ff53eaf8297b7dbcfc548724260962c2
