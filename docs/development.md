@@ -49,7 +49,7 @@ Crée `package/FastShell-<version>-windows-x64.zip` (Qt, libssh, OpenSSL et les 
 inclus) et son fichier `.sha256`. Pour l'essayer sans toucher à son installation :
 
 ```powershell
-.\install.ps1 -Package .\package\FastShell-1.0.1-windows-x64.zip -InstallDir $env:TEMP\fs-test -FilesOnly
+.\install.ps1 -Package .\package\FastShell-1.0.2-windows-x64.zip -InstallDir $env:TEMP\fs-test -FilesOnly
 ```
 
 ## Publier une version
