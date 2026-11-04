@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 //
 // QScrollBar with a 64-bit range, for scrollback buffers larger than INT_MAX
 // lines. The underlying QScrollBar works on a scaled-down int range.

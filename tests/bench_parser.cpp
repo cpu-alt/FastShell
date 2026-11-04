@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // Throughput check: parses 64 MiB of mixed output (plain text, SGR colors,
 // UTF-8). Prints MiB/s so regressions are easy to spot.

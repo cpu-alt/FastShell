@@ -1,6 +1,6 @@
-// Copyright 2026 EMF Hexa contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
-// Generates assets/emfhexa.ico (Windows executable icon) and docs/logo.png
+// Generates assets/fastshell.ico (Windows executable icon) and docs/logo.png
 // from the same drawing code the application uses.
 //   make_icon <ico path> <png path>
 #include <QGuiApplication>

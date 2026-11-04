@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // Content of one tab: one or more terminals arranged in nested splitters.
 // Splitting a pane in the same direction as its splitter adds a sibling;

@@ -10,6 +10,7 @@
 #include <QPainterPath>
 #include <QPalette>
 #include <QPixmap>
+#include <QStandardPaths>
 #include <QStyleFactory>
 #include <QWidget>
 
@@ -26,19 +27,38 @@ QString rgba(const QColor &c, int alpha) {
     return QStringLiteral("rgba(%1,%2,%3,%4)").arg(c.red()).arg(c.green()).arg(c.blue()).arg(alpha);
 }
 
-// The style sheet needs a file for the check mark of the check boxes: draw it
-// once in the temporary folder (the app has no resource file).
-QString checkImage() {
-    const QString path = QDir::temp().filePath(QStringLiteral("emfhexa-check.png"));
+// The style sheet needs files for its small images (check mark, arrows): draw
+// them once in the app's own cache folder (the app has no resource file).
+QString styleImage(const QString &name, const QColor &color, const QPolygonF &line, qreal width) {
+    QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    if (dir.isEmpty() || !QDir().mkpath(dir)) dir = QDir::tempPath();
+    const QString path = dir + QStringLiteral("/style-") + name + QStringLiteral(".png");
     QPixmap pixmap(30, 30);
     pixmap.fill(Qt::transparent);
     QPainter p(&pixmap);
     p.setRenderHint(QPainter::Antialiasing);
-    p.setPen(QPen(Qt::white, 3.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-    p.drawPolyline(QPolygonF({QPointF(7, 15.5), QPointF(12.5, 21), QPointF(23, 9)}));
+    p.setPen(QPen(color, width, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    p.drawPolyline(line);
     p.end();
     pixmap.save(path, "PNG");
     return QDir::fromNativeSeparators(path);
+}
+
+QString checkImage() {
+    return styleImage(QStringLiteral("check"), Qt::white,
+                      QPolygonF({QPointF(7, 15.5), QPointF(12.5, 21), QPointF(23, 9)}), 3.6);
+}
+QString chevronDown() {
+    return styleImage(QStringLiteral("down"), Muted, QPolygonF({QPointF(7, 11), QPointF(15, 19), QPointF(23, 11)}), 3.4);
+}
+QString chevronLeft() {
+    return styleImage(QStringLiteral("left"), Text, QPolygonF({QPointF(19, 7), QPointF(11, 15), QPointF(19, 23)}), 3.4);
+}
+QString chevronRight() {
+    return styleImage(QStringLiteral("right"), Text, QPolygonF({QPointF(11, 7), QPointF(19, 15), QPointF(11, 23)}), 3.4);
+}
+QString chevronUp() {
+    return styleImage(QStringLiteral("up"), Muted, QPolygonF({QPointF(7, 19), QPointF(15, 11), QPointF(23, 19)}), 3.4);
 }
 
 QString styleSheet() {
@@ -69,8 +89,6 @@ QToolButton:pressed, QToolButton:checked { background: @accentSoft; }
 QToolButton[popupMode="1"] { padding-right: 14px; }
 QToolButton::menu-button { background: transparent; border: none; width: 12px; border-radius: 4px; }
 QToolButton::menu-button:hover { background: @hover; }
-QToolButton#tabClose { padding: 1px; border-radius: 5px; }
-QToolButton#tabClose:hover { background: #E5484D; }
 
 QTabWidget::pane { border: none; background: @terminal; }
 QTabWidget::tab-bar { left: 4px; }
@@ -82,7 +100,14 @@ QTabBar::tab {
 }
 QTabBar::tab:hover:!selected { background: @hover; color: @text; }
 QTabBar::tab:selected { background: @terminal; color: white; }
-QTabBar::scroller { width: 26px; }
+QTabBar::scroller { width: 48px; }
+QTabBar QToolButton { background: @window; border: none; border-radius: 6px; margin: 6px 1px 2px 1px; padding: 0; }
+QTabBar QToolButton:hover { background: @hover; }
+QTabBar QToolButton::left-arrow { image: url(@chevronLeft); width: 10px; height: 10px; }
+QTabBar QToolButton::right-arrow { image: url(@chevronRight); width: 10px; height: 10px; }
+QTabBar QToolButton:disabled { background: @window; }
+QToolButton#tabClose { background: transparent; margin: 0; padding: 1px; border-radius: 5px; }
+QToolButton#tabClose:hover { background: #E5484D; }
 
 QDockWidget { color: @muted; font-weight: 600; }
 QDockWidget::title { background: @panel; padding: 8px 10px; text-align: left; border-bottom: 1px solid @window; }
@@ -102,8 +127,21 @@ QLineEdit, QPlainTextEdit, QTextEdit {
     padding: 5px 8px; selection-background-color: @accent;
 }
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus { border-color: @accent; }
-QComboBox { background: @surface; color: @text; border: 1px solid @border; border-radius: 7px; padding: 4px 8px; min-height: 20px; }
-QSpinBox { background: @surface; color: @text; border: 1px solid @border; border-radius: 7px; padding-left: 6px; min-height: 26px; }
+QComboBox { background: @surface; color: @text; border: 1px solid @border; border-radius: 7px; padding: 4px 26px 4px 8px; min-height: 20px; }
+QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: center right; width: 24px; border: none; background: transparent; }
+QComboBox::down-arrow { image: url(@chevronDown); width: 10px; height: 10px; }
+QComboBox::down-arrow:on { top: 1px; }
+QSpinBox { background: @surface; color: @text; border: 1px solid @border; border-radius: 7px; padding-left: 6px; padding-right: 24px; min-height: 26px; }
+QSpinBox::up-button, QSpinBox::down-button { subcontrol-origin: border; width: 20px; border: none; background: transparent; }
+QSpinBox::up-button { subcontrol-position: top right; margin: 3px 3px 0 0; border-top-right-radius: 5px; }
+QSpinBox::down-button { subcontrol-position: bottom right; margin: 0 3px 3px 0; border-bottom-right-radius: 5px; }
+QSpinBox::up-button:hover, QSpinBox::down-button:hover { background: @hover; }
+QSpinBox::up-arrow { image: url(@chevronUp); width: 8px; height: 8px; }
+QSpinBox::down-arrow { image: url(@chevronDown); width: 8px; height: 8px; }
+QSpinBox::up-arrow:disabled, QSpinBox::down-arrow:disabled { image: none; }
+QToolButton::menu-indicator { image: url(@chevronDown); width: 8px; height: 8px; subcontrol-origin: padding; subcontrol-position: center right; right: 4px; }
+QToolButton#osButton { background: @surface; border: 1px solid @border; border-radius: 7px; padding: 2px 16px 2px 6px; }
+QToolButton#osButton:hover { border-color: #3A414D; }
 QComboBox:hover, QSpinBox:hover { border-color: #3A414D; }
 QComboBox:focus, QSpinBox:focus { border-color: @accent; }
 QComboBox QAbstractItemView { background: @surface; border: 1px solid @border; border-radius: 8px; padding: 4px; selection-background-color: @accentSoft; }
@@ -155,6 +193,10 @@ QLabel#rdpStatus { color: @text; }
     };
     for (const auto &[token, value] : tokens) css.replace(QLatin1String(token), value);
     css.replace(QLatin1String("@checkImage"), checkImage());
+    css.replace(QLatin1String("@chevronDown"), chevronDown());
+    css.replace(QLatin1String("@chevronUp"), chevronUp());
+    css.replace(QLatin1String("@chevronLeft"), chevronLeft());
+    css.replace(QLatin1String("@chevronRight"), chevronRight());
     return css;
 }
 
@@ -187,8 +229,8 @@ protected:
             auto *widget = static_cast<QWidget *>(watched);
             const Qt::WindowType type = widget->windowType();
             if (widget->isWindow() && (type == Qt::Window || type == Qt::Dialog)
-                && !widget->property("emfhexa_decorated").toBool()) {
-                widget->setProperty("emfhexa_decorated", true);
+                && !widget->property("fs_decorated").toBool()) {
+                widget->setProperty("fs_decorated", true);
 #ifdef Q_OS_WIN
                 decorate(widget);
 #endif

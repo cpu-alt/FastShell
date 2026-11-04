@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // Connection + host key check + authentication, shared by the interactive
 // shell (SshBackend) and the file browser (SftpClient). Runs on a worker

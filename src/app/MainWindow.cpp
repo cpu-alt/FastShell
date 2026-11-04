@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #include "app/MainWindow.h"
 
 #include <QAction>
@@ -33,6 +33,7 @@
 #include "app/Style.h"
 #include "app/TabPage.h"
 #include "app/TerminalView.h"
+#include "app/Updater.h"
 #include "net/SftpClient.h"
 #include "net/SshBackend.h"
 #include "net/SerialBackend.h"
@@ -137,6 +138,9 @@ MainWindow::MainWindow(QWidget *parent)
     m_showTimestamps = settings.value(QStringLiteral("view/timestamps"), true).toBool();
     m_showLineNumbers = settings.value(QStringLiteral("view/lineNumbers"), true).toBool();
 
+    m_updater = new Updater(this);
+    QTimer::singleShot(5000, m_updater, &Updater::checkAutomatically);  // once the window is up
+
     createDocks();
     createMenus();
     createToolBar();
@@ -240,6 +244,15 @@ void MainWindow::createMenus() {
     add(edit, tr("Paste"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_V), [this] {
         if (TerminalView *v = current()) v->paste();
     });
+    edit->addSeparator();
+    QAction *confirmPaste = edit->addAction(tr("Confirm before pasting several lines"));
+    confirmPaste->setCheckable(true);
+    connect(edit, &QMenu::aboutToShow, confirmPaste, [confirmPaste] {
+        confirmPaste->setChecked(QSettings().value(QStringLiteral("terminal/confirmMultiLinePaste"), true).toBool());
+    });
+    connect(confirmPaste, &QAction::triggered, this, [](bool on) {
+        QSettings().setValue(QStringLiteral("terminal/confirmMultiLinePaste"), on);
+    });
 
     QMenu *window = menuBar()->addMenu(tr("&Window"));
     add(window, tr("Split right"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E), [this] { splitCurrent(Qt::Horizontal); });
@@ -312,6 +325,12 @@ void MainWindow::createMenus() {
     });
 
     QMenu *help = menuBar()->addMenu(tr("&Help"));
+    help->addAction(tr("Check for updates..."), this, [this] { m_updater->checkNow(); });
+    QAction *autoUpdate = help->addAction(tr("Check for updates automatically"));
+    autoUpdate->setCheckable(true);
+    autoUpdate->setChecked(Updater::automaticChecks());
+    connect(autoUpdate, &QAction::toggled, this, [](bool on) { Updater::setAutomaticChecks(on); });
+    help->addSeparator();
     help->addAction(tr("Sessions file location"), this, [this] {
         QMessageBox::information(this, tr("Sessions"), m_store->filePath());
     });
@@ -321,7 +340,7 @@ void MainWindow::createMenus() {
         box.setIconPixmap(logo::pixmap(96));
         box.setText(tr("<h3>FastShell %1</h3><p>SSH, Telnet, serial, remote desktop and local terminal.</p>"
                        "<p><b>Credits:</b> Nathan Witz &amp; Patrizio Ventura</p>"
-                       "<p>Built on the open-source WindTerm components (Apache-2.0).<br>Qt %2, libssh.</p>")
+                       "<p>Apache-2.0. Qt %2, libssh, OpenSSL. Third-party notices: NOTICE file.</p>")
                         .arg(QApplication::applicationVersion(), QString::fromLatin1(qVersion())));
         box.exec();
     });
@@ -450,7 +469,11 @@ void MainWindow::updateStatus() {
     } else if (s.type == SessionInfo::Type::Serial) {
         m_statusType->setText(QStringLiteral("Serial %1 %2").arg(s.serialPort, serialOptionsFor(s).summary()));
     } else {
-        m_statusType->setText(s.typeName() + QLatin1Char(' ') + s.host);
+        QString type = s.typeName() + QLatin1Char(' ') + s.host;
+        if (auto *ssh = qobject_cast<SshBackend *>(view->backend()); ssh && ssh->usedLegacyAlgorithms()) {
+            type += tr(" (old algorithms)");
+        }
+        m_statusType->setText(type);
     }
     m_statusMessage->setText(view->isRunning() ? tr("Ready") : tr("Disconnected"));
 }
@@ -540,6 +563,14 @@ TerminalView *MainWindow::createView(const SessionInfo &session, const QString &
             auto *ssh = new SshBackend(options, parent);
             ssh->confirm = confirmIn(self);
             ssh->ask = askIn(self);
+            // The Filer (SFTP) opens only once logged in, with the same login.
+            QObject::connect(ssh, &SshBackend::connected, self.data(), [self] {
+                if (!self) return;
+                self->updatePanels();
+                for (int i = 0; i < self->m_tabs->count(); ++i) {  // tooltip: old algorithms
+                    if (TabPage *page = self->pageAt(i)) self->refreshTabTitle(page);
+                }
+            });
             return ssh;
         };
         break;
@@ -589,11 +620,16 @@ void MainWindow::refreshTabTitle(TabPage *page) {
         text = names.mid(0, 2).join(QStringLiteral(" · "));
         if (names.size() > 2) text += QStringLiteral(" (+%1)").arg(names.size() - 2);
     }
-    if (!page->property("wtng_customName").toString().isEmpty()) {
-        text = page->property("wtng_customName").toString();
+    if (!page->property("fs_customName").toString().isEmpty()) {
+        text = page->property("fs_customName").toString();
     }
     m_tabs->setTabText(index, text);
-    m_tabs->setTabToolTip(index, title);
+    QString tip = title;
+    if (auto *ssh = qobject_cast<SshBackend *>(view->backend()); ssh && ssh->usedLegacyAlgorithms()) {
+        tip += (tip.isEmpty() ? QString() : QStringLiteral("\n"))
+             + tr("Old device: connected with legacy SHA-1/CBC algorithms, as PuTTY does.");
+    }
+    m_tabs->setTabToolTip(index, tip);
     m_tabs->setTabIcon(index, icons::session(s));
     m_tabs->tabBar()->setTabTextColor(index, s.color.isValid() ? s.color : QColor());
     if (index == m_tabs->currentIndex()) {
@@ -775,7 +811,7 @@ void MainWindow::showTabMenu(const QPoint &pos) {
     menu.addAction(tr("Rename..."), this, [this, page, index] {
         const QString name = QInputDialog::getText(this, tr("Rename tab"), tr("Name (empty = automatic):"),
                                                    QLineEdit::Normal, m_tabs->tabText(index));
-        page->setProperty("wtng_customName", name.trimmed());
+        page->setProperty("fs_customName", name.trimmed());
         refreshTabTitle(page);
     });
     if (s.id.isEmpty() && s.type != SessionInfo::Type::Local) {
@@ -801,7 +837,8 @@ SftpClient *MainWindow::sftpFor(TerminalView *view) {
         return existing;
     }
     auto *ssh = qobject_cast<SshBackend *>(view->backend());
-    if (!ssh || !view->isRunning()) return nullptr;
+    // Not before the login typed in the terminal: SFTP reuses it.
+    if (!ssh || !view->isRunning() || !ssh->isLoggedIn()) return nullptr;
 
     SshPrompter prompter;
     prompter.guiContext = this;

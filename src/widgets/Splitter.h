@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 //
 // QSplitter whose side panes can be collapsed and restored to their previous
 // ratio, by code or by double-clicking the handle.

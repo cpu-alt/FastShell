@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #include <gtest/gtest.h>
 
 #include <mutex>
@@ -99,8 +99,3 @@ TEST(Cryptographic, RoundTripAndTamperDetection) {
     EXPECT_FALSE(Cryptographic::decrypt(a, otherKey).has_value());
 }
 
-TEST(Cryptographic, LegacyKeyHasOriginalLayout) {
-    const QByteArray legacy = Cryptographic::legacyPbkdf2("pw", "salt");
-    EXPECT_EQ(legacy.size(), 48);  // 32 byte key + 16 byte IV, as in WindTerm 2.x
-    EXPECT_FALSE(Cryptographic::legacyDecrypt("not base64 cipher", legacy).has_value());
-}

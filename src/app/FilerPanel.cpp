@@ -1,5 +1,6 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #include "app/FilerPanel.h"
+#include "app/TextSafety.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -183,16 +184,18 @@ void FilerPanel::showRemote(TerminalView *view, SftpClient *client) {
     m_clientConnections << connect(client, &SftpClient::opened, this, [this](const QString &home) { goTo(home); });
     m_clientConnections << connect(client, &SftpClient::listed, this, &FilerPanel::onListed);
     m_clientConnections << connect(client, &SftpClient::failed, this, [this](const QString &message) {
-        m_status->setText(message);
+        // Switches and routers usually have no SFTP: say it simply (details on hover).
+        const bool noSftp = message.contains(QLatin1String("does not offer SFTP"));
+        m_status->setText(noSftp ? tr("Pas de SFTP sur cet appareil") : message);
         m_status->setToolTip(message);
     });
     m_clientConnections << connect(client, &SftpClient::changed, this, [this](const QString &dir) {
         if (dir == m_remotePath) refresh();
     });
-    if (client->property("wtng_path").toString().isEmpty()) {
+    if (client->property("fs_path").toString().isEmpty()) {
         client->open();
     } else {
-        goTo(client->property("wtng_path").toString());
+        goTo(client->property("fs_path").toString());
     }
 }
 
@@ -223,7 +226,7 @@ void FilerPanel::goTo(const QString &path) {
     if (m_remote) {
         if (!m_client) return;
         m_remotePath = path;
-        m_client->setProperty("wtng_path", path);
+        m_client->setProperty("fs_path", path);
         m_path->setText(path);
         m_status->setText(tr("Loading..."));
         m_client->list(path);
@@ -283,7 +286,10 @@ void FilerPanel::downloadSelected() {
     for (const QModelIndex &index : m_tree->selectionModel()->selectedRows(0)) {
         if (isDirectory(index)) continue;
         const QString remote = pathOf(index);
-        m_client->download(remote, QDir(target).filePath(QFileInfo(remote).fileName()));
+        // The name comes from the server: make it a plain Windows file name,
+        // and never overwrite a file already in Downloads.
+        const QString name = safety::localFileName(remote.section(QLatin1Char('/'), -1));
+        m_client->download(remote, safety::uniqueFilePath(target, name));
     }
 }
 

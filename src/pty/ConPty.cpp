@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 //
 // Rewritten from the original. Fixes: resize never applied (`&&` instead of
 // `||` and inverted assignment), delete instead of delete[], handles closed

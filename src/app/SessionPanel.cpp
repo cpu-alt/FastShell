@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #include "app/SessionPanel.h"
 
 #include <QColorDialog>
@@ -453,7 +453,12 @@ void SessionPanel::importInto(const QString &folder) {
                              tr("Imported %1 session(s) and %2 user(s)%3.")
                                  .arg(result.sessions)
                                  .arg(result.credentials)
-                                 .arg(folder.isEmpty() ? QString() : tr(" into \"%1\"").arg(folder)));
+                                 .arg(folder.isEmpty() ? QString() : tr(" into \"%1\"").arg(folder))
+                                 + (result.skippedLocal > 0
+                                        ? tr("\n\n%1 local shell session(s) were left out: they would run a program "
+                                             "on this PC.")
+                                              .arg(result.skippedLocal)
+                                        : QString()));
 }
 
 void SessionPanel::showMenu(const QPoint &pos) {

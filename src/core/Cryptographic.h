@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 //
 // Protects user secrets (passwords, private keys) with a master password.
 //
@@ -7,8 +7,8 @@
 // random 96-bit nonce, so tampering is detected and two encryptions of the
 // same text never look alike.
 //
-// The original scheme (AES-256-CBC, IV derived from the password, no
-// authentication) is kept as legacyDecrypt() only, to migrate old data.
+// Only this authenticated format is supported: the old unauthenticated
+// AES-CBC scheme of the original code was removed (nothing uses it).
 #pragma once
 
 #include <QByteArray>
@@ -29,8 +29,4 @@ public:
     static QByteArray encrypt(const QByteArray &plainText, const QByteArray &key);
     // Returns nullopt if the key is wrong or the data was modified.
     static std::optional<QByteArray> decrypt(const QByteArray &encoded, const QByteArray &key);
-
-    // Original WindTerm format, for migration only.
-    static QByteArray legacyPbkdf2(const QByteArray &password, const QByteArray &salt);
-    static std::optional<QByteArray> legacyDecrypt(const QByteArray &encoded, const QByteArray &legacyPbkdf2);
 };

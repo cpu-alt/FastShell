@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // SFTP file access on its own thread and its own SSH connection, so file
 // transfers never slow down the terminal. Transfers keep several requests in

@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 //
 // Changes from the original: sizes are set directly with setSizes() instead
 // of moveSplitter() offsets, and the saved ratio is stored on the pane widget
@@ -9,7 +9,7 @@
 #include <numeric>
 
 namespace {
-constexpr char RatioProperty[] = "wtng_ratio";
+constexpr char RatioProperty[] = "fs_ratio";
 constexpr double DefaultRatio = 0.18;
 }  // namespace
 

@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 //
 // Fix from the original: the int <-> 64-bit mapping ignored the minimum, so a
 // non-zero minimum gave wrong positions.

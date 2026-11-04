@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 //
 // Local pseudo terminal. ConPty on Windows 10 1809+, POSIX pty elsewhere.
 // (The winpty fallback of the original is gone: every supported Windows

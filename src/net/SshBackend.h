@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // Interactive SSH shell over the system libssh (0.11+). Replaces the bundled
 // libssh 0.9.5 fork, which is affected by CVE-2023-48795 (Terrapin) and other
@@ -34,6 +34,14 @@ public:
 
     // Options with the password that actually worked (for SFTP). GUI thread.
     SshOptions connectedOptions() const;
+    // True once logged in and the shell is open (SFTP waits for it, so that
+    // it reuses the login typed in the terminal instead of asking again).
+    bool isLoggedIn() const { return m_loggedIn; }
+    // True when the device only accepted old SHA-1/CBC algorithms.
+    bool usedLegacyAlgorithms() const {
+        QMutexLocker lock(&m_mutex);
+        return m_usedLegacy;
+    }
 
 Q_SIGNALS:
     void connected();
@@ -47,6 +55,7 @@ private:
     Options m_options;
     std::thread m_worker;
     std::atomic<bool> m_stop{false};
+    std::atomic<bool> m_loggedIn{false};
 
     mutable QMutex m_mutex;
     QByteArray m_pendingWrite;

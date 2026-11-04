@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #pragma once
 
 // Number of terminal columns a code point occupies: 0 (combining marks and

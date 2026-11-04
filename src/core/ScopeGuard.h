@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 //
 // Runs a callable when the guard goes out of scope, unless cancelled.
 // Templated on the callable, so there is no std::function allocation.

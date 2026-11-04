@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // VT500/xterm escape-sequence parser (state machine after Paul Williams'
 // DEC parser). Decodes UTF-8 and hands printable text to the handler in

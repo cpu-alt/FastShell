@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 //
 // Fixed-capacity ring buffer addressed by an ever-growing absolute index.
 // Old entries are overwritten once the capacity is reached.

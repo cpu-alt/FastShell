@@ -2,7 +2,7 @@
 //
 // A remote desktop (RDP) session shown in a tab.
 //
-// On Windows, with Qt ActiveQt available (WTNG_HAVE_AXRDP), the Microsoft
+// On Windows, with Qt ActiveQt available (FASTSHELL_HAVE_AXRDP), the Microsoft
 // Remote Desktop ActiveX control (mstscax.dll, the engine of mstsc.exe) is
 // embedded right in the tab. Without it, the tab offers to open the session in
 // the system client instead (mstsc on Windows, xfreerdp elsewhere).

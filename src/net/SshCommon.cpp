@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #include "net/SshCommon.h"
 
 #include <QCoreApplication>
@@ -229,6 +229,8 @@ SshConnectResult sshConnect(const SshOptions &options, const SshPrompter &prompt
         return prompter.askLogin(prompt, true);
     };
     const QString accessDenied = tr("Access denied");
+    // Same prompt whatever the method, like MobaXterm and PuTTY.
+    const QString passwordPrompt = tr("%1@%2's password: ").arg(userName, options.host);
 
     if (rc != SSH_AUTH_SUCCESS && (methods & SSH_AUTH_METHOD_INTERACTIVE)) {
         while (rc != SSH_AUTH_SUCCESS && typed < MaxTypedPasswords && !stopping()) {
@@ -239,7 +241,11 @@ SshConnectResult sshConnect(const SshOptions &options, const SshPrompter &prompt
                 for (int i = 0; i < prompts; ++i) {
                     char echo = 0;
                     QString prompt = QString::fromUtf8(ssh_userauth_kbdint_getprompt(s, i, &echo));
-                    if (!prompt.endsWith(QLatin1Char(' '))) prompt += QLatin1Char(' ');
+                    if (!echo && prompts == 1 && prompt.contains(QLatin1String("password"), Qt::CaseInsensitive)) {
+                        prompt = passwordPrompt;  // the server's plain "Password:"
+                    } else if (!prompt.endsWith(QLatin1Char(' '))) {
+                        prompt += QLatin1Char(' ');
+                    }
                     const std::optional<QString> answer = echo ? prompter.askLogin(prompt, false) : nextPassword(prompt);
                     if (!answer) return result;  // cancelled
                     answered = true;
@@ -253,7 +259,6 @@ SshConnectResult sshConnect(const SshOptions &options, const SshPrompter &prompt
         }
     }
 
-    const QString passwordPrompt = tr("%1@%2's password: ").arg(userName, options.host);
     while (rc != SSH_AUTH_SUCCESS && rc != SSH_AUTH_ERROR && (methods & SSH_AUTH_METHOD_PASSWORD)
            && typed < MaxTypedPasswords && !stopping()) {
         const std::optional<QString> password = nextPassword(passwordPrompt);

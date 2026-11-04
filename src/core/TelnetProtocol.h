@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 //
 // Telnet protocol (RFC 854/855) with a working option-negotiation engine.
 // The original component only had name tables; this adds the parser that

@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // Common interface for everything a terminal tab can talk to: a local pty,
 // an SSH channel or a Telnet socket.

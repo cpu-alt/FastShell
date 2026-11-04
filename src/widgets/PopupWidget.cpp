@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 //
 // Qt 6 port: QDesktopWidget and the private qFadeEffect are gone, replaced
 // by QScreen and a QPropertyAnimation. Positions now take the screen origin

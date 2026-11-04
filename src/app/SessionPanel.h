@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // Session tree: saved sessions grouped in folders (drag and drop to
 // reorganise), plus the shells detected on this machine.

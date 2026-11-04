@@ -21,6 +21,7 @@
 #include <libssh/libssh.h>
 #include <libssh/server.h>
 
+#include "net/SshBackend.h"
 #include "net/SshCommon.h"
 
 namespace {
@@ -115,7 +116,7 @@ private:
 
 QCoreApplication &app() {
     static int argc = 1;
-    static char name[] = "wtng_tests";
+    static char name[] = "fastshell_tests";
     static char *argv[] = {name, nullptr};
     static QCoreApplication *instance = QCoreApplication::instance() ? nullptr : new QCoreApplication(argc, argv);
     return instance ? *instance : *QCoreApplication::instance();
@@ -202,6 +203,76 @@ TEST_F(SshLogin, GivesUpAfterThreeWrongPasswords) {
     EXPECT_EQ(run.prompts.size(), 3);
     EXPECT_FALSE(run.result.error.isEmpty());
     EXPECT_EQ(m_server.keyAttempts, 0);
+}
+
+// --- through SshBackend, as the terminal sees it --------------------------------
+
+namespace {
+
+// Pumps events and collects what the backend shows until `text` appears.
+bool waitShown(SshBackend &backend, QByteArray &shown, const QByteArray &text) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!shown.contains(text) && std::chrono::steady_clock::now() < deadline) {
+        QCoreApplication::processEvents();
+        shown += backend.readAll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return shown.contains(text);
+}
+
+bool waitLoggedIn(SshBackend &backend, QByteArray &shown, const std::atomic<bool> &authenticated) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!authenticated && std::chrono::steady_clock::now() < deadline) {
+        QCoreApplication::processEvents();
+        shown += backend.readAll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    for (int i = 0; i < 20; ++i) {  // anything shown right after the login
+        QCoreApplication::processEvents();
+        shown += backend.readAll();
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    return authenticated;
+}
+
+}  // namespace
+
+TEST_F(SshLogin, TerminalShowsEachPromptOnceLikeMobaXterm) {
+    SshBackend backend(m_options);
+    backend.confirm = [](const QString &) { return true; };
+    backend.ask = [](const QString &, bool) -> std::optional<QString> {
+        ADD_FAILURE() << "no dialog may ask for the login";
+        return std::nullopt;
+    };
+    backend.start(24, 80);
+    QByteArray shown;
+    ASSERT_TRUE(waitShown(backend, shown, "login as: "));
+    // Typing with a mistake, Backspace, and an arrow key split over two writes.
+    backend.write("alx");
+    backend.write("\x7f");
+    backend.write("i\x1b[");
+    backend.write("Cce\r");
+    ASSERT_TRUE(waitShown(backend, shown, "password: "));
+    backend.write("secret\r");
+    ASSERT_TRUE(waitLoggedIn(backend, shown, m_server.authenticated));
+    EXPECT_EQ(m_server.lastUser(), "alice");
+    EXPECT_EQ(shown, QByteArray("login as: alx\b \bice\r\nalice@127.0.0.1's password: \r\n"));
+    EXPECT_EQ(m_server.keyAttempts, 0);
+}
+
+TEST_F(SshLogin, UserOnlyGoesStraightToThePassword) {
+    m_options.user = QStringLiteral("alice");
+    SshBackend backend(m_options);
+    backend.confirm = [](const QString &) { return true; };
+    backend.start(24, 80);
+    QByteArray shown;
+    ASSERT_TRUE(waitShown(backend, shown, "password: "));
+    backend.write("wrong\r");
+    ASSERT_TRUE(waitShown(backend, shown, "Access denied\r\nalice@127.0.0.1's password: "));
+    backend.write("secret\r");
+    ASSERT_TRUE(waitLoggedIn(backend, shown, m_server.authenticated));
+    EXPECT_EQ(shown, QByteArray("alice@127.0.0.1's password: \r\nAccess denied\r\n"
+                                "alice@127.0.0.1's password: \r\n"));
 }
 
 TEST_F(SshLogin, CtrlCCancels) {

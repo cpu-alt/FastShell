@@ -1,21 +1,25 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #include "app/TerminalView.h"
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QClipboard>
 #include <QDrag>
 #include <QFontDatabase>
 #include <QFontMetricsF>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QPainter>
 #include <QPainterPath>
 #include <QRegularExpression>
 #include <QScreen>
+#include <QSettings>
 #include <algorithm>
 
 #include "app/KeyMapper.h"
+#include "app/TextSafety.h"
 #include "widgets/ScrollBar.h"
 
 namespace {
@@ -68,7 +72,8 @@ TerminalView::TerminalView(BackendFactory factory, QWidget *parent)
 
     m_screen->onReply = [this](const std::string &reply) { send(QByteArray::fromStdString(reply)); };
     m_screen->onTitle = [this](const std::string &title) {
-        m_title = QString::fromStdString(title);
+        // Set by the remote program: no control or direction characters.
+        m_title = safety::displayTitle(QString::fromStdString(title));
         Q_EMIT titleChanged(m_title);
     };
     m_screen->onBell = [] { QApplication::beep(); };
@@ -209,7 +214,7 @@ void TerminalView::setTerminalFont(const QFont &font) {
 void TerminalView::updateGutter() {
     int chars = 0;
     if (m_showTimestamps) chars += 10;               // [HH:mm:ss]
-    if (m_showLineNumbers) chars += chars ? 7 : 6;   // line number
+    if (m_showLineNumbers) chars += chars ? 6 : 5;   // line number (5 digits)
     m_gutterWidth = chars ? (chars + 1.5) * m_cellWidth : 0;
     updateGeometryFromFont();
     update();
@@ -426,9 +431,11 @@ void TerminalView::paintEvent(QPaintEvent *) {
                 gutter = line->time ? QDateTime::fromSecsSinceEpoch(line->time).toString(QStringLiteral("[HH:mm:ss]"))
                                     : QStringLiteral("          ");
             }
-            if (m_showLineNumbers) {
+            // Lines below the cursor that were never written get no number.
+            const bool written = line->time != 0 || top + r <= m_screen->screenTopLine() + m_screen->cursorRow();
+            if (m_showLineNumbers && written) {
                 if (!gutter.isEmpty()) gutter += QLatin1Char(' ');
-                gutter += QString::number(top + r + 1).rightJustified(6);
+                gutter += QString::number(top + r + 1).rightJustified(5);
             }
             painter.setFont(m_font);
             painter.setPen(command ? accent : gutterText);
@@ -583,6 +590,24 @@ bool TerminalView::focusNextPrevChild(bool) {
 void TerminalView::keyPressEvent(QKeyEvent *event) {
     const auto mods = event->modifiers();
     const bool shiftOnly = (mods & ~Qt::KeypadModifier) == Qt::ShiftModifier;
+    const bool ctrlOnly = (mods & ~Qt::KeypadModifier) == Qt::ControlModifier;
+
+    // Copy / paste like Windows Terminal and MobaXterm: Ctrl+V pastes, Ctrl+C
+    // copies when text is selected (otherwise it still interrupts), Ctrl+Insert copies.
+    if (ctrlOnly) {
+        switch (event->key()) {
+        case Qt::Key_V: paste(); return;
+        case Qt::Key_Insert: copySelection(); return;
+        case Qt::Key_C:
+            if (m_hasSelection) {
+                copySelection();
+                clearSelection();
+                return;
+            }
+            break;
+        default: break;
+        }
+    }
 
     if (shiftOnly) {
         switch (event->key()) {
@@ -663,19 +688,28 @@ void TerminalView::copySelection() {
 }
 
 void TerminalView::paste() {
-    QString text = QGuiApplication::clipboard()->text();
+    const QString text = QGuiApplication::clipboard()->text();
     if (text.isEmpty()) {
         return;
     }
-    text.replace(QStringLiteral("\r\n"), QStringLiteral("\r"));
-    text.replace(QLatin1Char('\n'), QLatin1Char('\r'));
-    QByteArray bytes = text.toUtf8();
-    if (m_screen->bracketedPaste()) {
-        bytes.replace("\x1b[201~", "");  // a pasted end marker must not escape the paste
-        bytes = "\x1b[200~" + bytes + "\x1b[201~";
+    // Each line break runs a command: ask first, unless the user turned it off.
+    const int lines = safety::pasteLineCount(text);
+    if (lines > 1 && QSettings().value(QStringLiteral("terminal/confirmMultiLinePaste"), true).toBool()) {
+        QMessageBox box(this);
+        box.setWindowTitle(tr("Paste"));
+        box.setIcon(QMessageBox::Question);
+        box.setText(tr("Paste %n lines? Each line is run as a command.", nullptr, lines));
+        box.setDetailedText(text.left(4000));
+        box.setStandardButtons(QMessageBox::Yes | QMessageBox::Cancel);
+        box.button(QMessageBox::Yes)->setText(tr("Paste"));
+        auto *dontAsk = new QCheckBox(tr("Don't ask again"), &box);
+        box.setCheckBox(dontAsk);
+        if (box.exec() != QMessageBox::Yes) return;
+        if (dontAsk->isChecked()) QSettings().setValue(QStringLiteral("terminal/confirmMultiLinePaste"), false);
     }
+    // Hidden control characters (ESC, Ctrl+C...) never travel with a paste.
     scrollToBottom();
-    userSend(bytes);
+    userSend(safety::pasteBytes(text, m_screen->bracketedPaste()));
 }
 
 // --- mouse ---------------------------------------------------------------------------------
@@ -755,13 +789,9 @@ void TerminalView::mousePressEvent(QMouseEvent *event) {
         m_hasSelection = false;
         scheduleRender();
     } else if (event->button() == Qt::RightButton) {
-        // Right click: copy when something is selected, paste otherwise.
-        if (m_hasSelection) {
-            copySelection();
-            clearSelection();
-        } else {
-            paste();
-        }
+        // Right click pastes, like PuTTY and MobaXterm (selecting already copied).
+        clearSelection();
+        paste();
     } else if (event->button() == Qt::MiddleButton && QGuiApplication::clipboard()->supportsSelection()) {
         userSend(QGuiApplication::clipboard()->text(QClipboard::Selection).toUtf8());
     }
@@ -822,11 +852,7 @@ void TerminalView::mouseReleaseEvent(QMouseEvent *event) {
     }
     if (event->button() == Qt::LeftButton && m_selecting) {
         m_selecting = false;
-        if (m_hasSelection && QGuiApplication::clipboard()->supportsSelection()) {
-            const auto [from, to] = std::minmax(m_selectionAnchor, m_selectionHead);
-            QGuiApplication::clipboard()->setText(toQString(m_screen->text(from.line, from.column, to.line, to.column)),
-                                                  QClipboard::Selection);
-        }
+        if (m_hasSelection) copySelection();  // selecting copies to the clipboard, like PuTTY / MobaXterm
     }
 }
 
@@ -852,6 +878,7 @@ void TerminalView::mouseDoubleClickEvent(QMouseEvent *event) {
     m_selectionHead = {p.line, to};
     m_hasSelection = true;
     m_selecting = false;
+    copySelection();  // a double-clicked word is copied too
     scheduleRender();
 }
 

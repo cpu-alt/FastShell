@@ -1,6 +1,7 @@
 // Copyright 2026 FastShell contributors. Apache-2.0.
 #include "app/RdpView.h"
 
+#include <QApplication>
 #include <QDir>
 #include <QFile>
 #include <QLabel>
@@ -12,12 +13,12 @@
 #include <QVBoxLayout>
 #include <algorithm>
 
-#ifdef WTNG_HAVE_AXRDP
+#ifdef FASTSHELL_HAVE_AXRDP
 #include <QAxObject>
 #include <QAxWidget>
 #endif
 
-#ifdef WTNG_HAVE_AXRDP
+#ifdef FASTSHELL_HAVE_AXRDP
 namespace {
 
 QAxWidget *axOf(const QPointer<QWidget> &widget) {
@@ -103,7 +104,7 @@ RdpView::~RdpView() {
 }
 
 bool RdpView::embeddedAvailable() {
-#ifdef WTNG_HAVE_AXRDP
+#ifdef FASTSHELL_HAVE_AXRDP
     return true;
 #else
     return false;
@@ -128,7 +129,7 @@ void RdpView::showStatus(const QString &text, bool canConnect) {
 }
 
 bool RdpView::createControl() {
-#ifdef WTNG_HAVE_AXRDP
+#ifdef FASTSHELL_HAVE_AXRDP
     if (m_ax) return true;
     auto *ax = new QAxWidget(this);
     // Newest control first. The "NotSafeForScripting" classes accept a
@@ -165,7 +166,7 @@ bool RdpView::createControl() {
 
 void RdpView::connectToHost() {
     m_started = true;
-#ifdef WTNG_HAVE_AXRDP
+#ifdef FASTSHELL_HAVE_AXRDP
     if (!createControl()) {
         showStatus(tr("The Windows Remote Desktop control (mstscax.dll) could not be loaded."), false);
         return;
@@ -213,7 +214,7 @@ void RdpView::connectToHost() {
 }
 
 void RdpView::disconnectFromHost() {
-#ifdef WTNG_HAVE_AXRDP
+#ifdef FASTSHELL_HAVE_AXRDP
     if (m_ax && m_connected) {
         m_connected = false;
         axOf(m_ax)->dynamicCall("Disconnect()");
@@ -238,7 +239,7 @@ void RdpView::onLoginComplete() {
 void RdpView::onDisconnected(int reason) {
     m_connected = false;
     QString text = tr("Disconnected.");
-#ifdef WTNG_HAVE_AXRDP
+#ifdef FASTSHELL_HAVE_AXRDP
     if (m_ax) {
         const int extended = axOf(m_ax)->property("ExtendedDisconnectReason").toInt();
         const QString description =
@@ -264,7 +265,7 @@ void RdpView::resizeEvent(QResizeEvent *event) {
 // Asks the server for a desktop of the new size (Windows 8.1 / 2012 R2 and
 // later). Older servers keep their size and SmartSizing scales the picture.
 void RdpView::applyDisplaySize() {
-#ifdef WTNG_HAVE_AXRDP
+#ifdef FASTSHELL_HAVE_AXRDP
     if (!m_ax || !m_connected) return;
     const qreal ratio = devicePixelRatioF();
     const uint w = uint(std::clamp(int(width() * ratio), 640, 8192)) & ~1u;  // even width
@@ -290,6 +291,8 @@ void RdpView::openExternally() {
     if (!QProcess::startDetached(QStringLiteral("mstsc.exe"), {QDir::toNativeSeparators(file)})) {
         showStatus(tr("Could not start mstsc.exe."), embeddedAvailable());
     }
+    // mstsc reads the file at start: do not leave host and user names behind.
+    QTimer::singleShot(30000, qApp, [file] { QFile::remove(file); });
 #else
     QStringList args{QStringLiteral("/v:%1:%2").arg(m_options.host).arg(m_options.port), QStringLiteral("/dynamic-resolution")};
     if (!m_options.user.isEmpty()) args << QStringLiteral("/u:%1").arg(m_options.user);

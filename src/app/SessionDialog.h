@@ -3,6 +3,8 @@
 
 #include <QDialog>
 
+#include <initializer_list>
+
 #include "app/SessionStore.h"
 
 class QCheckBox;
@@ -12,6 +14,7 @@ class QLabel;
 class QLineEdit;
 class QPushButton;
 class QSpinBox;
+class QToolButton;
 
 class SessionDialog : public QDialog {
     Q_OBJECT
@@ -32,6 +35,20 @@ private:
     void fillProfiles(const QString &select);
     void applyProfile();
     int typeIndex() const;
+    QWidget *line(std::initializer_list<QWidget *> widgets, std::initializer_list<int> stretches);
+
+    // Form lines holding several fields side by side.
+    QLabel *m_deviceLabel;
+    QWidget *m_typeRow;
+    QWidget *m_nameLine;
+    QWidget *m_hostRow;
+    QWidget *m_loginRow;
+    QWidget *m_optionsRow;
+    QWidget *m_localArgsRow;
+    QWidget *m_speedRow;
+    QWidget *m_parityRow;
+    QWidget *m_serialOptionsRow;
+    QWidget *m_bottomRow;
 
     SessionStore *m_store;
     QString m_id;
@@ -40,7 +57,10 @@ private:
     QComboBox *m_folder;
     QComboBox *m_type;
     QComboBox *m_profile;
-    QComboBox *m_os;
+    QToolButton *m_osButton;  // system icon, next to the name
+    QString m_os;
+    QWidget *m_nameRow;
+    void setSystem(const QString &os);
     QWidget *m_profileRow;
 
     QLineEdit *m_host;

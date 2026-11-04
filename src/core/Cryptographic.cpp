@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 #include "core/Cryptographic.h"
 
 #include <cstring>
@@ -15,9 +15,6 @@ constexpr int MagicLength = 3;
 constexpr int NonceLength = 12;
 constexpr int TagLength = 16;
 
-constexpr int LegacyIvLength = 16;
-constexpr int LegacyKeyLength = 32;
-constexpr int LegacyIterations = 100000;
 
 using CipherCtx = std::unique_ptr<EVP_CIPHER_CTX, decltype(&EVP_CIPHER_CTX_free)>;
 
@@ -105,36 +102,3 @@ std::optional<QByteArray> Cryptographic::decrypt(const QByteArray &encoded, cons
     return plain;
 }
 
-QByteArray Cryptographic::legacyPbkdf2(const QByteArray &password, const QByteArray &salt) {
-    // Same derivation as WindTerm 2.x (QPasswordDigestor with HMAC-SHA3-512).
-    QByteArray out(LegacyKeyLength + LegacyIvLength, Qt::Uninitialized);
-    if (PKCS5_PBKDF2_HMAC(password.constData(), int(password.size()), bytes(salt), int(salt.size()),
-                          LegacyIterations, EVP_sha3_512(), int(out.size()), bytes(out)) != 1) {
-        throw std::runtime_error("PBKDF2 failed");
-    }
-    return out;
-}
-
-std::optional<QByteArray> Cryptographic::legacyDecrypt(const QByteArray &encoded, const QByteArray &legacyKey) {
-    if (legacyKey.size() != LegacyKeyLength + LegacyIvLength) {
-        return std::nullopt;
-    }
-    const QByteArray data = QByteArray::fromBase64(encoded);
-    QByteArray plain(data.size() + EVP_MAX_BLOCK_LENGTH, Qt::Uninitialized);
-
-    CipherCtx ctx = newContext();
-    int length = 0;
-    int total = 0;
-    const auto *key = bytes(legacyKey);
-    const auto *iv = key + LegacyKeyLength;
-    if (EVP_DecryptInit_ex(ctx.get(), EVP_aes_256_cbc(), nullptr, key, iv) != 1
-        || EVP_DecryptUpdate(ctx.get(), bytes(plain), &length, bytes(data), int(data.size())) != 1) {
-        return std::nullopt;
-    }
-    total = length;
-    if (EVP_DecryptFinal_ex(ctx.get(), bytes(plain) + total, &length) != 1) {
-        return std::nullopt;
-    }
-    plain.resize(total + length);
-    return plain;
-}

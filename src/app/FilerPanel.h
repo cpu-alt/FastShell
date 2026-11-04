@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // File browser. Shows the local disk for local tabs and the remote server
 // (over SFTP) for SSH tabs, with download, upload (also by drag and drop

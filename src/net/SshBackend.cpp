@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #include "net/SshBackend.h"
 
 #include <chrono>
@@ -66,6 +66,9 @@ void SshBackend::resize(int rows, int columns) {
 std::optional<QString> SshBackend::readLine(const QString &prompt, bool secret) {
     appendData(prompt.toUtf8());
     QByteArray line;
+    // Arrows and other special keys arrive as escape sequences, possibly
+    // split over several writes: skip them whole, never as text.
+    enum class Escape { None, Start, Sequence } escape = Escape::None;
     while (!m_stop) {
         QByteArray input;
         {
@@ -78,6 +81,18 @@ std::optional<QString> SshBackend::readLine(const QString &prompt, bool secret) 
         }
         for (qsizetype i = 0; i < input.size(); ++i) {
             const char c = input.at(i);
+            if (escape == Escape::Start) {  // after ESC: "[" or "O" starts a sequence
+                escape = (c == '[' || c == 'O') ? Escape::Sequence : Escape::None;
+                continue;
+            }
+            if (escape == Escape::Sequence) {  // ends with a byte from '@' to '~'
+                if (uchar(c) >= 0x40 && uchar(c) <= 0x7E) escape = Escape::None;
+                continue;
+            }
+            if (c == 0x1b) {
+                escape = Escape::Start;
+                continue;
+            }
             if (c == '\r' || c == '\n') {
                 qsizetype rest = i + 1;
                 if (c == '\r' && rest < input.size() && input.at(rest) == '\n') ++rest;
@@ -99,7 +114,6 @@ std::optional<QString> SshBackend::readLine(const QString &prompt, bool secret) 
                 if (!secret) appendData(QByteArray("\b \b"));
                 continue;
             }
-            if (c == 0x1b) break;  // arrows and other keys: ignored
             if (uchar(c) < 0x20) continue;
             line.append(c);
             if (!secret) appendData(&c, 1);
@@ -134,11 +148,8 @@ void SshBackend::run() {
         m_workingPassword = connection.password;
         m_usedLegacy = connection.usedLegacyAlgorithms;
     }
-    if (connection.usedLegacyAlgorithms) {
-        const QString notice = tr("[Old device: connected with legacy SHA-1/CBC algorithms, as PuTTY does. "
-                                  "Prefer updating its firmware when possible.]");
-        appendData(QByteArray("\x1b[33m") + notice.toUtf8() + QByteArray("\x1b[0m\r\n"));
-    }
+    // Old algorithms (SHA-1/CBC): no line in the terminal, the window shows
+    // it on the tab tooltip and in the status bar (usedLegacyAlgorithms()).
 
     Channel channel(ssh_channel_new(s));
     int rows, columns;
@@ -154,6 +165,7 @@ void SshBackend::run() {
         Q_EMIT errorOccurred(tr("Cannot open a shell: %1").arg(QString::fromUtf8(ssh_get_error(s))));
         return;
     }
+    m_loggedIn = true;
     Q_EMIT connected();
 
     std::unique_ptr<char[]> buffer(new char[ReadBufferSize]);

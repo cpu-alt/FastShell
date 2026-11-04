@@ -1,0 +1,15 @@
+FastShell
+Copyright 2026 Nathan Witz & Patrizio Ventura
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Third-party code included in this product:
+
+- Some core, pty and widget components are derived from WindTerm
+  (Copyright 2020 WindTerm), licensed under the Apache License 2.0.
+- The pty layer is derived from ptyqt (Copyright (c) 2019 Vitaly Petrov),
+  licensed under the MIT License (see docs/ptyqt-LICENSE).
+
+The Windows release also ships unmodified libraries, each under its own
+license: Qt 6 (LGPL-3.0), libssh (LGPL-2.1), OpenSSL (Apache-2.0),
+and the MinGW-w64 / GCC runtime libraries.

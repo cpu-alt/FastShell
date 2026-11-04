@@ -1,4 +1,4 @@
-// Copyright 2020 WindTerm, 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2020 WindTerm, 2026 FastShell contributors. Apache-2.0.
 //
 // Small spin lock for very short critical sections. Meets the C++ Lockable
 // requirements, so use it with std::lock_guard / std::scoped_lock.
@@ -13,11 +13,11 @@
 
 #if defined(_MSC_VER) || defined(__x86_64__) || defined(__i386__)
 #include <immintrin.h>
-#define WTNG_CPU_RELAX() _mm_pause()
+#define FASTSHELL_CPU_RELAX() _mm_pause()
 #elif defined(__aarch64__)
-#define WTNG_CPU_RELAX() asm volatile("yield")
+#define FASTSHELL_CPU_RELAX() asm volatile("yield")
 #else
-#define WTNG_CPU_RELAX() ((void)0)
+#define FASTSHELL_CPU_RELAX() ((void)0)
 #endif
 
 class SpinMutex {
@@ -33,7 +33,7 @@ public:
             }
             while (m_locked.load(std::memory_order_relaxed)) {
                 if (spins < 64) {
-                    WTNG_CPU_RELAX();
+                    FASTSHELL_CPU_RELAX();
                     ++spins;
                 } else {
                     m_locked.wait(true, std::memory_order_relaxed);

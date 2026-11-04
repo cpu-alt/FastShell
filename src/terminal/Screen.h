@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // Terminal screen model: the visible grid, the scrollback history, the
 // cursor and all xterm modes. Has no GUI dependency, so it is fully testable.

@@ -28,7 +28,7 @@ namespace {
 QByteArray protect(const QByteArray &plain) {
     DATA_BLOB in{DWORD(plain.size()), reinterpret_cast<BYTE *>(const_cast<char *>(plain.constData()))};
     DATA_BLOB out{};
-    if (!CryptProtectData(&in, L"EMFHexa", nullptr, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &out)) {
+    if (!CryptProtectData(&in, L"FastShell", nullptr, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &out)) {
         return {};
     }
     QByteArray result(reinterpret_cast<const char *>(out.pbData), qsizetype(out.cbData));
@@ -202,7 +202,11 @@ QString newId() {
 }
 
 constexpr char ExportFormat[] = "emfhexa-sessions";
-constexpr int ExportPbkdf2Iterations = 300000;
+constexpr int ExportPbkdf2Iterations = 600000;  // OWASP 2023 for PBKDF2-HMAC-SHA256
+// An imported file chooses its own iteration count: refuse absurd values
+// (too weak, or so large that importing would hang).
+constexpr int MinImportIterations = 100000;
+constexpr int MaxImportIterations = 10000000;
 
 }  // namespace
 
@@ -337,8 +341,22 @@ void SessionStore::removeProfile(const QString &id) {
     save();
 }
 
+namespace {
+QString &dataDirectoryOverride() {
+    static QString dir;
+    return dir;
+}
+}  // namespace
+
+void SessionStore::setDataDirectory(const QString &directory) {
+    dataDirectoryOverride() = directory;
+}
+
 QString SessionStore::filePath() const {
-    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + QStringLiteral("/sessions.json");
+    const QString dir = dataDirectoryOverride().isEmpty()
+                            ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                            : dataDirectoryOverride();
+    return dir + QStringLiteral("/sessions.json");
 }
 
 const SessionInfo *SessionStore::find(const QString &id) const {
@@ -515,6 +533,10 @@ SessionStore::ImportResult SessionStore::importSessions(const QByteArray &data, 
         }
         const QByteArray salt = QByteArray::fromBase64(secretBlock.value(QStringLiteral("salt")).toString().toLatin1());
         const int iterations = secretBlock.value(QStringLiteral("iterations")).toInt(ExportPbkdf2Iterations);
+        if (salt.size() < 16 || iterations < MinImportIterations || iterations > MaxImportIterations) {
+            result.error = tr("The passwords in this file are not protected correctly; it was not imported.");
+            return result;
+        }
         const QByteArray key = Cryptographic::deriveKey(passphrase.toUtf8(), salt, iterations);
         const auto plain = Cryptographic::decrypt(secretBlock.value(QStringLiteral("data")).toString().toLatin1(), key);
         if (!plain) {
@@ -543,9 +565,15 @@ SessionStore::ImportResult SessionStore::importSessions(const QByteArray &data, 
         const QString oldId = c.id;
         c.protectedPassword.clear();
         const QString password = secrets.value(QStringLiteral("credential:") + oldId).toString();
+        // Reuse one of your shared users only if the file proves it knows it
+        // (same password). Otherwise a file could point its own servers at
+        // your saved "admin" account and receive its password.
         QString id;
         for (const Credential &existing : m_credentials) {
-            if (existing.user == c.user && existing.name == c.name) id = existing.id;
+            if (existing.user == c.user && existing.name == c.name && !password.isEmpty()
+                && existing.password() == password) {
+                id = existing.id;
+            }
         }
         if (id.isEmpty()) {
             c.id = newId();
@@ -569,6 +597,13 @@ SessionStore::ImportResult SessionStore::importSessions(const QByteArray &data, 
 
     for (const QJsonValue &v : in.value(QStringLiteral("sessions")).toArray()) {
         SessionInfo s = sessionFromJson(v.toObject());
+        // A local shell from a file would run its program on this PC with one
+        // double-click: never imported.
+        if (s.type == SessionInfo::Type::Local) {
+            ++result.skippedLocal;
+            continue;
+        }
+        if (s.port < 1 || s.port > 65535) s.port = SessionInfo::defaultPort(s.type);
         const QString oldId = s.id;
         s.id = newId();  // never overwrite an existing session
         s.folder = place(s.folder);

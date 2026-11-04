@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 //
 // Saved sessions organised in folders, stored as JSON in the user's
 // application data directory. Passwords are encrypted for the current
@@ -126,6 +126,7 @@ public:
     struct ImportResult {
         int sessions = 0;
         int credentials = 0;
+        int skippedLocal = 0;  // local shells are never imported (they run programs)
         bool needsPassphrase = false;  // the file has passwords: call again with it
         QString error;
     };
@@ -137,6 +138,8 @@ public:
     static std::optional<SessionInfo> parseQuickConnect(const QString &text);
 
     QString filePath() const;
+    // Portable mode (--data-dir): sessions in this folder instead of %APPDATA%.
+    static void setDataDirectory(const QString &directory);
 
 Q_SIGNALS:
     void changed();

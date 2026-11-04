@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #include <gtest/gtest.h>
 
 #include <QCoreApplication>
@@ -13,7 +13,7 @@ namespace {
 struct TestStore : ::testing::Test {
     void SetUp() override {
         QStandardPaths::setTestModeEnabled(true);
-        QCoreApplication::setApplicationName(QStringLiteral("WindTermNG-tests"));
+        QCoreApplication::setApplicationName(QStringLiteral("FastShell-tests"));
         SessionStore probe;
         QFile::remove(probe.filePath());
     }

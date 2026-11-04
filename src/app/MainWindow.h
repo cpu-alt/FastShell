@@ -1,4 +1,4 @@
-// Copyright 2026 WindTerm NG contributors. Apache-2.0.
+// Copyright 2026 FastShell contributors. Apache-2.0.
 #pragma once
 
 #include <QHash>
@@ -20,6 +20,7 @@ class SftpClient;
 class TabPage;
 class TerminalView;
 class TransferPanel;
+class Updater;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -71,6 +72,7 @@ private:
     OutlinePanel *m_outline = nullptr;
     FilerPanel *m_filer = nullptr;
     TransferPanel *m_transfers = nullptr;
+    Updater *m_updater = nullptr;
     QuickCommandBar *m_quickCommands = nullptr;
     QDockWidget *m_filerDock = nullptr;
     QDockWidget *m_transferDock = nullptr;

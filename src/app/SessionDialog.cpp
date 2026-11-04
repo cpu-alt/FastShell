@@ -12,10 +12,12 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMenu>
 #include <QProcess>
 #include <QPushButton>
 #include <QSerialPortInfo>
 #include <QSpinBox>
+#include <QToolButton>
 
 #include "app/Icons.h"
 #include "app/ManageDialogs.h"
@@ -60,7 +62,7 @@ SessionDialog::SessionDialog(SessionStore *store, QWidget *parent) : QDialog(par
     m_folder->setEditable(true);
     m_folder->addItem(QString());
     m_folder->addItems(store->folders());
-    m_folder->lineEdit()->setPlaceholderText(tr("folder, e.g. Switches/Building A"));
+    m_folder->lineEdit()->setPlaceholderText(tr("e.g. Switches/Building A"));
 
     // Device profile (tag + serial preset).
     m_profile = new QComboBox(this);
@@ -73,13 +75,25 @@ SessionDialog::SessionDialog(SessionStore *store, QWidget *parent) : QDialog(par
     });
 
     // System mark shown next to the session.
-    m_os = new QComboBox(this);
-    m_os->addItem(tr("None"), QString());
+    // A small icon button next to the name; its menu lists the systems.
+    m_osButton = new QToolButton(this);
+    m_osButton->setObjectName(QStringLiteral("osButton"));
+    m_osButton->setPopupMode(QToolButton::InstantPopup);
+    m_osButton->setIconSize(QSize(20, 20));
+    m_osButton->setFixedSize(QSize(52, 30));
+    auto *osMenu = new QMenu(m_osButton);
+    osMenu->addAction(tr("None"), this, [this] { setSystem(QString()); });
     for (const icons::System &system : icons::systems()) {
-        m_os->addItem(icons::system(QLatin1String(system.id)), tr(system.label), QLatin1String(system.id));
+        const QString id = QLatin1String(system.id);
+        osMenu->addAction(icons::system(id), tr(system.label), this, [this, id] { setSystem(id); });
     }
-    m_os->setIconSize(QSize(18, 18));
-    m_os->setMaxVisibleItems(20);
+    m_osButton->setMenu(osMenu);
+    m_nameRow = new QWidget(this);
+    auto *nameLayout = new QHBoxLayout(m_nameRow);
+    nameLayout->setContentsMargins(0, 0, 0, 0);
+    nameLayout->addWidget(m_name, 1);
+    nameLayout->addWidget(m_osButton);
+    setSystem(QString());
 
     // Remote
     m_host = new QLineEdit(this);
@@ -99,9 +113,11 @@ SessionDialog::SessionDialog(SessionStore *store, QWidget *parent) : QDialog(par
     });
 
     m_user = new QLineEdit(this);
+    m_user->setToolTip(tr("Empty: asked in the terminal (login as:), like MobaXterm"));
     m_password = new QLineEdit(this);
     m_password->setEchoMode(QLineEdit::Password);
-    m_password->setPlaceholderText(tr("optional, asked in the terminal"));
+    m_password->setPlaceholderText(tr("optional"));
+    m_password->setToolTip(tr("Empty: asked in the terminal"));
     m_savePasswordBox = new QCheckBox(tr("Remember password (encrypted for your Windows account)"), this);
     m_identity = new QLineEdit(this);
     m_identity->setPlaceholderText(tr("optional; no key is used unless chosen here"));
@@ -166,33 +182,48 @@ SessionDialog::SessionDialog(SessionStore *store, QWidget *parent) : QDialog(par
     m_saveBox = new QCheckBox(tr("Save in the session list"), this);
     m_saveBox->setChecked(true);
 
+    // Compact layout: fields that go together share a line.
+    m_savePasswordBox->setText(tr("Remember password"));
+    m_savePasswordBox->setToolTip(tr("Encrypted for your Windows account (DPAPI), never stored in clear text"));
+    m_legacyBox->setText(tr("Old devices (SHA-1, CBC, group1)"));
+    m_crlfBox->setText(tr("Enter sends CR LF"));
+    m_crlfBox->setToolTip(tr("Default: CR only"));
+    m_backspaceBox->setText(tr("Backspace sends ^H"));
+    m_backspaceBox->setToolTip(tr("Ctrl+H instead of DEL, for devices that need it"));
+    m_port->setFixedWidth(90);
+    m_dataBits->setMinimumWidth(70);
+    m_stopBits->setMinimumWidth(70);
+
+    m_deviceLabel = new QLabel(tr("Device"), this);
+    m_typeRow = line({m_type, m_deviceLabel, m_profileRow}, {1, 0, 2});
+    m_nameLine = line({m_nameRow, new QLabel(tr("Folder"), this), m_folder}, {3, 0, 2});
+    m_hostRow = line({m_host, new QLabel(tr("Port"), this), m_port}, {1, 0, 0});
+    m_loginRow = line({m_user, new QLabel(tr("Password"), this), m_password}, {1, 0, 1});
+    m_optionsRow = line({m_savePasswordBox, m_legacyBox}, {0, 1});
+    m_localArgsRow = line({m_arguments, new QLabel(tr("Start in"), this), m_workingDirectory}, {1, 0, 1});
+    m_speedRow = line({m_baudRate, new QLabel(tr("Data bits"), this), m_dataBits, new QLabel(tr("Stop bits"), this),
+                       m_stopBits},
+                      {2, 0, 1, 0, 1});
+    m_parityRow = line({m_parity, new QLabel(tr("Flow control"), this), m_flowControl}, {1, 0, 1});
+    m_serialOptionsRow = line({m_crlfBox, m_backspaceBox}, {0, 1});
+    m_bottomRow = line({m_colorButton, m_saveBox}, {1, 0});
+
     m_form = new QFormLayout(this);
-    m_form->addRow(tr("Type"), m_type);
-    m_form->addRow(tr("Device"), m_profileRow);
-    m_form->addRow(tr("System"), m_os);
-    m_form->addRow(tr("Name"), m_name);
-    m_form->addRow(tr("Folder"), m_folder);
-    m_form->addRow(tr("Host"), m_host);
-    m_form->addRow(tr("Port"), m_port);
+    m_form->setVerticalSpacing(8);
+    m_form->addRow(tr("Type"), m_typeRow);
+    m_form->addRow(tr("Name"), m_nameLine);
+    m_form->addRow(tr("Host"), m_hostRow);
     m_form->addRow(tr("Saved user"), m_credentialRow);
-    m_form->addRow(tr("User"), m_user);
-    m_form->addRow(tr("Password"), m_password);
-    m_form->addRow(QString(), m_savePasswordBox);
+    m_form->addRow(tr("User"), m_loginRow);
     m_form->addRow(tr("Private key"), m_identityRow);
-    m_form->addRow(QString(), m_legacyBox);
+    m_form->addRow(QString(), m_optionsRow);
     m_form->addRow(tr("Program"), m_programRow);
-    m_form->addRow(tr("Arguments"), m_arguments);
-    m_form->addRow(tr("Start in"), m_workingDirectory);
+    m_form->addRow(tr("Arguments"), m_localArgsRow);
     m_form->addRow(tr("Serial port"), m_serialRow);
-    m_form->addRow(tr("Speed (baud)"), m_baudRate);
-    m_form->addRow(tr("Data bits"), m_dataBits);
-    m_form->addRow(tr("Parity"), m_parity);
-    m_form->addRow(tr("Stop bits"), m_stopBits);
-    m_form->addRow(tr("Flow control"), m_flowControl);
-    m_form->addRow(QString(), m_crlfBox);
-    m_form->addRow(QString(), m_backspaceBox);
-    m_form->addRow(tr("Tab color"), m_colorButton);
-    m_form->addRow(QString(), m_saveBox);
+    m_form->addRow(tr("Speed (baud)"), m_speedRow);
+    m_form->addRow(tr("Parity"), m_parityRow);
+    m_form->addRow(QString(), m_serialOptionsRow);
+    m_form->addRow(tr("Tab color"), m_bottomRow);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     m_form->addRow(buttons);
@@ -212,7 +243,39 @@ SessionDialog::SessionDialog(SessionStore *store, QWidget *parent) : QDialog(par
     connect(m_credential, &QComboBox::currentIndexChanged, this, &SessionDialog::updateVisibility);
     connect(m_profile, &QComboBox::activated, this, &SessionDialog::applyProfile);
     updateVisibility();
-    resize(540, sizeHint().height());
+    setMinimumWidth(620);
+    resize(660, sizeHint().height());
+}
+
+// One form line holding several fields (and their small labels) side by side.
+QWidget *SessionDialog::line(std::initializer_list<QWidget *> widgets, std::initializer_list<int> stretches) {
+    auto *row = new QWidget(this);
+    auto *layout = new QHBoxLayout(row);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(8);
+    auto stretch = stretches.begin();
+    for (QWidget *w : widgets) {
+        if (qobject_cast<QLabel *>(w)) w->setContentsMargins(8, 0, 0, 0);  // a gap before each inner label
+        layout->addWidget(w, stretch != stretches.end() ? *stretch++ : 0);
+    }
+    return row;
+}
+
+void SessionDialog::setSystem(const QString &os) {
+    const QIcon icon = icons::system(os);
+    m_os = icon.isNull() ? QString() : os;
+    QString label = tr("None");
+    for (const icons::System &system : icons::systems()) {
+        if (m_os == QLatin1String(system.id)) label = tr(system.label);
+    }
+    if (icon.isNull()) {
+        m_osButton->setIcon(QIcon());
+        m_osButton->setText(QStringLiteral("OS"));  // nothing chosen yet
+    } else {
+        m_osButton->setIcon(icon);
+        m_osButton->setText(QString());
+    }
+    m_osButton->setToolTip(tr("System icon: %1").arg(label));
 }
 
 int SessionDialog::typeIndex() const {
@@ -268,24 +331,20 @@ void SessionDialog::updateVisibility() {
     const bool serial = type == SerialIndex;
     const bool sharedUser = login && !m_credential->currentData().toString().isEmpty();
 
-    m_form->setRowVisible(m_profileRow, !local && !rdp);
-    m_form->setRowVisible(m_os, !local);
-    m_form->setRowVisible(m_host, remote);
-    m_form->setRowVisible(m_port, remote);
+    m_deviceLabel->setVisible(!local && !rdp);
+    m_profileRow->setVisible(!local && !rdp);
+    m_osButton->setVisible(!local);
+    m_form->setRowVisible(m_hostRow, remote);
     m_form->setRowVisible(m_credentialRow, login);
-    m_form->setRowVisible(m_user, login && !sharedUser);
-    m_form->setRowVisible(m_password, login && !sharedUser);
-    m_form->setRowVisible(m_savePasswordBox, login && !sharedUser);
-    m_user->setPlaceholderText(rdp ? tr("user or DOMAIN\\user") : tr("optional, asked in the terminal (login as:)"));
+    m_form->setRowVisible(m_loginRow, login && !sharedUser);
+    m_user->setPlaceholderText(rdp ? tr("user or DOMAIN\\user") : tr("optional"));
     m_form->setRowVisible(m_identityRow, ssh && !sharedUser);
-    m_form->setRowVisible(m_legacyBox, ssh);
+    m_savePasswordBox->setVisible(login && !sharedUser);
+    m_legacyBox->setVisible(ssh);
+    m_form->setRowVisible(m_optionsRow, (login && !sharedUser) || ssh);
     m_form->setRowVisible(m_programRow, local);
-    m_form->setRowVisible(m_arguments, local);
-    m_form->setRowVisible(m_workingDirectory, local);
-    for (QWidget *w : {m_serialRow, static_cast<QWidget *>(m_baudRate), static_cast<QWidget *>(m_dataBits),
-                       static_cast<QWidget *>(m_parity), static_cast<QWidget *>(m_stopBits),
-                       static_cast<QWidget *>(m_flowControl), static_cast<QWidget *>(m_crlfBox),
-                       static_cast<QWidget *>(m_backspaceBox)}) {
+    m_form->setRowVisible(m_localArgsRow, local);
+    for (QWidget *w : {m_serialRow, m_speedRow, m_parityRow, m_serialOptionsRow}) {
         m_form->setRowVisible(w, serial);
     }
     adjustSize();
@@ -302,12 +361,12 @@ void SessionDialog::setSession(const SessionInfo &s) {
                                                                   : SerialIndex);
     fillProfiles(s.profileId);
     fillUsers(s.credentialId);
-    serialui::selectData(m_os, s.os);
+    setSystem(s.os);
     m_host->setText(s.host);
     m_port->setValue(s.port);
     m_user->setText(s.user);
     m_keptPassword = s.protectedPassword;
-    m_password->setPlaceholderText(s.protectedPassword.isEmpty() ? tr("optional, asked in the terminal")
+    m_password->setPlaceholderText(s.protectedPassword.isEmpty() ? tr("optional")
                                                                  : tr("saved (leave empty to keep)"));
     m_savePasswordBox->setChecked(!s.protectedPassword.isEmpty());
     m_identity->setText(s.identityFile);
@@ -389,7 +448,7 @@ SessionInfo SessionDialog::session() const {
     s.sendCrLf = m_crlfBox->isChecked();
     s.backspaceCtrlH = s.type == SessionInfo::Type::Serial && m_backspaceBox->isChecked();
     s.color = m_color;
-    s.os = s.type == SessionInfo::Type::Local ? QString() : m_os->currentData().toString();
+    s.os = s.type == SessionInfo::Type::Local ? QString() : m_os;
 
     s.name = m_name->text().trimmed();
     if (s.name.isEmpty()) {

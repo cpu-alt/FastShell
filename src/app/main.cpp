@@ -15,8 +15,8 @@
 
 namespace {
 
-// The app used to be called "EMF Hexa", and "WindTerm NG" before that. Bring
-// their sessions and settings along the first time FastShell starts, so
+// The app used to be called "EMF Hexa". Bring its
+// sessions and settings along the first time FastShell starts, so
 // nothing has to be re-entered (passwords are DPAPI blobs of the Windows
 // user, they stay readable).
 int savedItemCount(const QString &file) {
@@ -32,7 +32,7 @@ void migrateFromOldNames() {
         const char *organization;
         const char *application;
     };
-    const OldName oldNames[] = {{"EMF NET", "EMFHexa"}, {"WindTermNG", "WindTermNG"}};  // newest first
+    const OldName oldNames[] = {{"EMF NET", "EMFHexa"}};
 
     // Settings: keys missing here are taken from the old names, once each.
     QSettings current;
@@ -75,12 +75,8 @@ int main(int argc, char *argv[]) {
     QApplication::setOrganizationName(QStringLiteral("EMF NET"));
     QApplication::setApplicationName(QStringLiteral("FastShell"));
     QApplication::setApplicationDisplayName(QStringLiteral("FastShell"));
-    QApplication::setApplicationVersion(QStringLiteral(WTNG_VERSION));
+    QApplication::setApplicationVersion(QStringLiteral(FASTSHELL_VERSION));
     QApplication::setWindowIcon(logo::icon());
-    migrateFromOldNames();
-
-    // Modern dark look that matches the terminal and the logo.
-    style::apply(app);
 
     // Command line: targets in quick-connect syntax ("admin@10.0.0.1",
     // "COM3 115200", "rdp host", "local"), optionally all in one tab side by side.
@@ -91,9 +87,28 @@ int main(int argc, char *argv[]) {
     const QCommandLineOption sideBySide(QStringLiteral("side-by-side"),
                                         QStringLiteral("Open all targets side by side in one tab."));
     parser.addOption(sideBySide);
+    const QCommandLineOption dataDir(QStringLiteral("data-dir"),
+                                     QStringLiteral("Portable mode: keep sessions and settings in this folder."),
+                                     QStringLiteral("folder"));
+    parser.addOption(dataDir);
     parser.addPositionalArgument(QStringLiteral("targets"),
                                  QStringLiteral("user@host[:port], telnet host, rdp host, \"COM3 115200\" or local"));
     parser.process(app);
+
+    if (parser.isSet(dataDir)) {
+        // Portable: settings in an .ini file and sessions in that folder; the
+        // installed copy's data (registry, %APPDATA%) is left untouched.
+        const QString dir = QDir(parser.value(dataDir)).absolutePath();
+        QDir().mkpath(dir);
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, dir);
+        SessionStore::setDataDirectory(dir);
+    } else {
+        migrateFromOldNames();
+    }
+
+    // Modern dark look that matches the terminal and the logo.
+    style::apply(app);
 
     QList<SessionInfo> targets;
     for (const QString &arg : parser.positionalArguments()) {
