@@ -12,6 +12,7 @@ class OutlinePanel;
 class QDockWidget;
 class QLabel;
 class QTabWidget;
+class QMenu;
 class QTimer;
 class RdpView;
 class QuickCommandBar;
@@ -41,6 +42,12 @@ private:
     void createDocks();
     void createStatusBar();
     void createToolBar();
+    void createThemeMenu(QMenu *view);
+    void refreshThemeIcons();
+    // A remote desktop can leave its tab for a panel (docked or floating, like
+    // the Filer) and come back.
+    void detachRdp(RdpView *rdp);
+    void attachRdp(QDockWidget *dock);
     void openRemoteDesktop(const SessionInfo &session, const QString &password);
     RdpView *rdpAt(int index) const;
     void addCloseButton(QWidget *page);  // flat "x" on the tab of page

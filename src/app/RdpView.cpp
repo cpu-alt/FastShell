@@ -89,6 +89,8 @@ RdpView::RdpView(const Options &options, QWidget *parent) : QWidget(parent), m_o
     m_resizeTimer.setSingleShot(true);
     m_resizeTimer.setInterval(400);
     connect(&m_resizeTimer, &QTimer::timeout, this, &RdpView::applyDisplaySize);
+    m_stateTimer.setInterval(500);
+    connect(&m_stateTimer, &QTimer::timeout, this, &RdpView::pollState);
 
     if (embeddedAvailable()) {
         showStatus(tr("Ready to connect."), true);
@@ -100,7 +102,10 @@ RdpView::RdpView(const Options &options, QWidget *parent) : QWidget(parent), m_o
 }
 
 RdpView::~RdpView() {
-    disconnectFromHost();
+    m_stateTimer.stop();
+#ifdef FASTSHELL_HAVE_AXRDP
+    if (m_ax && m_connected) axOf(m_ax)->dynamicCall("Disconnect()");
+#endif
 }
 
 bool RdpView::embeddedAvailable() {
@@ -175,12 +180,15 @@ void RdpView::connectToHost() {
 
     // Settings live in several "AdvancedSettingsN" interfaces depending on
     // the Windows version: set each value on the newest one that has it.
-    auto setAdvanced = [this](const char *property, const QVariant &value) {
-        for (const char *name : {"AdvancedSettings9", "AdvancedSettings8", "AdvancedSettings7", "AdvancedSettings6",
-                                 "AdvancedSettings5", "AdvancedSettings4", "AdvancedSettings3", "AdvancedSettings2"}) {
-            if (QAxObject *settings = axOf(m_ax)->querySubObject(name)) {
-                if (settings->setProperty(property, value)) return true;
-            }
+    // The interfaces are looked up once (newest first).
+    QList<QAxObject *> advanced;
+    for (const char *name : {"AdvancedSettings9", "AdvancedSettings8", "AdvancedSettings7", "AdvancedSettings6",
+                             "AdvancedSettings5", "AdvancedSettings4", "AdvancedSettings3", "AdvancedSettings2"}) {
+        if (QAxObject *settings = axOf(m_ax)->querySubObject(name)) advanced << settings;
+    }
+    auto setAdvanced = [&advanced](const char *property, const QVariant &value) {
+        for (QAxObject *settings : advanced) {
+            if (settings->setProperty(property, value)) return true;
         }
         return false;
     };
@@ -193,21 +201,42 @@ void RdpView::connectToHost() {
     axOf(m_ax)->setProperty("DesktopWidth", std::clamp(int(width() * ratio), 640, 8192));
     axOf(m_ax)->setProperty("DesktopHeight", std::clamp(int(height() * ratio), 480, 8192));
     axOf(m_ax)->setProperty("ColorDepth", 32);
+    // Shown by the control itself while it connects (its surface is blank).
+    axOf(m_ax)->setProperty("ConnectingText", tr("Connecting to %1...").arg(m_options.host));
+    axOf(m_ax)->setProperty("DisconnectedText", tr("Disconnected."));
     setAdvanced("RDPPort", m_options.port);
     setAdvanced("EnableCredSspSupport", true);  // NLA, required by most servers
     setAdvanced("AuthenticationLevel", 2);      // warn about unknown certificates
     setAdvanced("SmartSizing", true);           // scale while the tab is resized
     setAdvanced("RedirectClipboard", true);
     setAdvanced("EnableAutoReconnect", true);
+    // Speed: compression, persistent bitmap cache (the API spells it
+    // "Peristence"), the link quality detected automatically so the server
+    // picks the best codec, and Windows key shortcuts sent to the server.
+    setAdvanced("Compress", 1);
+    setAdvanced("BitmapPeristence", 1);
     setAdvanced("BitmapPersistence", 1);
+    setAdvanced("CachePersistenceActive", 1);
+    setAdvanced("BandwidthDetection", true);
+    setAdvanced("NetworkConnectionType", 7);  // CONNECTION_TYPE_AUTODETECT
+    setAdvanced("PerformanceFlags", 0x80 | 0x100);  // font smoothing, desktop composition
+    setAdvanced("GrabFocusOnConnect", true);
+    setAdvanced("overallConnectionTimeout", 30);  // seconds: an unreachable host fails sooner
     if (!m_options.password.isEmpty()) setAdvanced("ClearTextPassword", m_options.password);
     for (const char *name : {"SecuredSettings3", "SecuredSettings2"}) {
         QAxObject *secured = axOf(m_ax)->querySubObject(name);
         if (secured && secured->setProperty("KeyboardHookMode", 1)) break;  // Alt+Tab, Win... go to the remote desktop
     }
 
-    showStatus(tr("Connecting..."), false);
+    // Show the control while it connects: its own prompts (user name and
+    // password, unknown certificate) are drawn from its window and never
+    // appear while it is hidden, which left the tab on "Connecting...".
+    Q_EMIT statusChanged(tr("Connecting..."));
+    m_stack->setCurrentWidget(m_ax.data());
+    m_seenActive = false;
+    m_loggedIn = false;
     axOf(m_ax)->dynamicCall("Connect()");
+    m_stateTimer.start();
 #else
     openExternally();
 #endif
@@ -218,6 +247,34 @@ void RdpView::disconnectFromHost() {
     if (m_ax && m_connected) {
         m_connected = false;
         axOf(m_ax)->dynamicCall("Disconnect()");
+        m_stateTimer.stop();
+        showStatus(tr("Disconnected."), true);
+    }
+#endif
+}
+
+// The ActiveX events (OnConnected, OnDisconnected...) never reach Qt with this
+// control, so its "Connected" property is read twice a second instead:
+// 0 = not connected, 1 = connected, 2 = connecting.
+void RdpView::pollState() {
+#ifdef FASTSHELL_HAVE_AXRDP
+    if (!m_ax) {
+        m_stateTimer.stop();
+        return;
+    }
+    const int state = axOf(m_ax)->property("Connected").toInt();
+    if (state == 1 || state == 2) m_seenActive = true;
+    if (state == 1) {
+        if (!m_connected) onConnected();
+        if (!m_loggedIn) onLoginComplete();
+    } else if (state == 0 && m_seenActive) {
+        const bool wasConnected = m_connected;
+        m_stateTimer.stop();
+        if (wasConnected) {
+            onDisconnected(0);
+        } else {
+            showStatus(tr("Could not connect to %1.").arg(m_options.host), true);
+        }
     }
 #endif
 }
@@ -229,15 +286,19 @@ void RdpView::onConnected() {
 }
 
 void RdpView::onLoginComplete() {
+    m_loggedIn = true;
     if (m_ax) {
         m_stack->setCurrentWidget(m_ax.data());
         m_ax->setFocus();
     }
+    // The tab may have changed size while connecting: send the real size.
+    m_resizeTimer.start();
     Q_EMIT statusChanged(tr("Connected"));
 }
 
 void RdpView::onDisconnected(int reason) {
     m_connected = false;
+    m_stateTimer.stop();
     QString text = tr("Disconnected.");
 #ifdef FASTSHELL_HAVE_AXRDP
     if (m_ax) {

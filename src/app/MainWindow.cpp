@@ -2,6 +2,8 @@
 #include "app/MainWindow.h"
 
 #include <QAction>
+#include <QActionGroup>
+#include <algorithm>
 #include <QApplication>
 #include <QCloseEvent>
 #include <QDateTime>
@@ -107,6 +109,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     auto *plus = new QToolButton(this);
     plus->setIcon(style::icon(style::Glyph::Terminal));
+    plus->setProperty("fs_glyph", int(style::Glyph::Terminal));
     plus->setIconSize(QSize(18, 18));
     plus->setAutoRaise(true);
     plus->setToolTip(tr("New local tab (Ctrl+Shift+T)"));
@@ -320,6 +323,8 @@ void MainWindow::createMenus() {
     }
     view->addAction(m_quickCommands->toggleViewAction());
     view->addSeparator();
+    createThemeMenu(view);
+    view->addSeparator();
     m_fullScreenAction = add(view, tr("Full screen"), QKeySequence(Qt::ALT | Qt::Key_Return), [this] {
         isFullScreen() ? showNormal() : showFullScreen();
     });
@@ -356,6 +361,7 @@ void MainWindow::createToolBar() {
 
     auto action = [this, bar](style::Glyph glyph, const QString &tip, auto slot) {
         QAction *a = bar->addAction(style::icon(glyph), tip);
+        a->setProperty("fs_glyph", int(glyph));
         a->setToolTip(tip);
         connect(a, &QAction::triggered, this, slot);
         return a;
@@ -376,12 +382,14 @@ void MainWindow::createToolBar() {
     action(style::Glyph::SplitRight, tr("Split right (Ctrl+Shift+E)"), [this] { splitCurrent(Qt::Horizontal); });
     action(style::Glyph::SplitDown, tr("Split down (Ctrl+Shift+O)"), [this] { splitCurrent(Qt::Vertical); });
     m_broadcastAction->setIcon(style::icon(style::Glyph::Broadcast));
+    m_broadcastAction->setProperty("fs_glyph", int(style::Glyph::Broadcast));
     bar->addAction(m_broadcastAction);
 
     // View: the same actions as the View menu, one click away.
     bar->addSeparator();
     auto viewAction = [bar](QAction *a, style::Glyph glyph, const QString &tip) {
         a->setIcon(style::icon(glyph));
+        a->setProperty("fs_glyph", int(glyph));
         a->setToolTip(tip);
         bar->addAction(a);
     };
@@ -675,6 +683,7 @@ void MainWindow::addCloseButton(QWidget *page) {
     auto *button = new QToolButton(m_tabs->tabBar());
     button->setObjectName(QStringLiteral("tabClose"));
     button->setIcon(style::icon(style::Glyph::Close));
+    button->setProperty("fs_glyph", int(style::Glyph::Close));
     button->setIconSize(QSize(12, 12));
     button->setFixedSize(18, 18);
     button->setToolTip(tr("Close tab"));
@@ -785,6 +794,7 @@ void MainWindow::showTabMenu(const QPoint &pos) {
         }
         menu.addAction(tr("Open in the system Remote Desktop client"), rdp, &RdpView::openExternally);
         menu.addSeparator();
+        menu.addAction(tr("Move to a panel"), this, [this, rdp] { detachRdp(rdp); });
         menu.addAction(tr("Close tab"), this, [this, rdp] { closeTab(m_tabs->indexOf(rdp)); });
         menu.exec(m_tabs->tabBar()->mapToGlobal(pos));
         return;
@@ -986,4 +996,98 @@ bool MainWindow::tabBarDragEvent(QEvent *event) {
     default:
         return false;
     }
+}
+
+// View > Theme: the colour themes, switched live, and the glowing edges.
+void MainWindow::createThemeMenu(QMenu *view) {
+    QMenu *menu = view->addMenu(tr("Theme"));
+    auto *group = new QActionGroup(menu);
+    group->setExclusive(true);
+    const QList<style::ColorTheme> &list = style::themes();
+    for (int i = 0; i < list.size(); ++i) {
+        if (i == 3) menu->addSeparator();  // FastShell's own themes, then the VS Code classics
+        const style::ColorTheme &theme = list.at(i);
+        QAction *a = menu->addAction(theme.name);
+        a->setCheckable(true);
+        a->setChecked(theme.id == style::current().id);
+        group->addAction(a);
+        const QString id = theme.id;
+        connect(a, &QAction::triggered, this, [id] { style::setTheme(id); });
+    }
+    menu->addSeparator();
+    QAction *glow = menu->addAction(tr("Glowing edges"));
+    glow->setToolTip(tr("Thin accent outlines on panels, tabs, menus and the active pane"));
+    glow->setCheckable(true);
+    glow->setChecked(style::glow());
+    connect(glow, &QAction::toggled, this, [](bool on) { style::setGlow(on); });
+    connect(style::notifier(), &style::Notifier::changed, this, &MainWindow::refreshThemeIcons);
+}
+
+// The toolbar icons are drawn in the theme colours: draw them again.
+void MainWindow::refreshThemeIcons() {
+    for (QAction *a : findChildren<QAction *>()) {
+        const QVariant glyph = a->property("fs_glyph");
+        if (glyph.isValid()) a->setIcon(style::icon(style::Glyph(glyph.toInt())));
+    }
+    for (QToolButton *b : findChildren<QToolButton *>()) {
+        const QVariant glyph = b->property("fs_glyph");
+        if (glyph.isValid()) b->setIcon(style::icon(style::Glyph(glyph.toInt())));
+    }
+    for (QWidget *w : findChildren<QWidget *>()) w->update();
+}
+
+// The remote desktop leaves its tab for a panel the user can dock on any side
+// or float, like the Filer. Closing the panel ends the session.
+void MainWindow::detachRdp(RdpView *rdp) {
+    const int index = m_tabs->indexOf(rdp);
+    if (index < 0) return;
+    const QString title = m_tabs->tabText(index);
+    const QIcon icon = m_tabs->tabIcon(index);
+    m_tabs->removeTab(index);  // keeps the view (and its connection) alive
+
+    auto *dock = new QDockWidget(title, this);
+    static int count = 0;
+    dock->setObjectName(QStringLiteral("rdpDock%1").arg(++count));
+    dock->setWindowIcon(icon);
+    dock->setAttribute(Qt::WA_DeleteOnClose);
+    dock->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+    dock->setWidget(rdp);
+    dock->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(dock, &QWidget::customContextMenuRequested, this, [this, dock, rdp](const QPoint &pos) {
+        QMenu menu(this);
+        menu.addAction(tr("Move back to a tab"), this, [this, dock] { attachRdp(dock); });
+        if (rdp->isConnected()) {
+            menu.addAction(tr("Disconnect"), rdp, &RdpView::disconnectFromHost);
+        } else if (RdpView::embeddedAvailable()) {
+            menu.addAction(tr("Connect"), rdp, &RdpView::connectToHost);
+        }
+        menu.addAction(tr("Open in the system Remote Desktop client"), rdp, &RdpView::openExternally);
+        menu.addSeparator();
+        menu.addAction(tr("Close"), dock, &QWidget::close);
+        menu.exec(dock->mapToGlobal(pos));
+    });
+    // Its own column next to the Filer, half of the window wide.
+    addDockWidget(Qt::LeftDockWidgetArea, dock);
+    if (m_filerDock && !m_filerDock->isFloating() && dockWidgetArea(m_filerDock) == Qt::LeftDockWidgetArea) {
+        splitDockWidget(m_filerDock, dock, Qt::Horizontal);
+    }
+    dock->show();
+    QTimer::singleShot(0, this, [this, dock] { resizeDocks({dock}, {std::max(480, width() / 2)}, Qt::Horizontal); });
+    rdp->setFocus();
+    if (m_tabs->count() == 0) updatePanels();
+    updateStatus();
+}
+
+void MainWindow::attachRdp(QDockWidget *dock) {
+    auto *rdp = qobject_cast<RdpView *>(dock->widget());
+    if (!rdp) return;
+    const QString title = dock->windowTitle();
+    const QIcon icon = dock->windowIcon();
+    const int index = m_tabs->addTab(rdp, icon, title);  // reparents the view out of the panel
+    addCloseButton(rdp);
+    m_tabs->setTabToolTip(index, QStringLiteral("RDP %1:%2").arg(rdp->options().host).arg(rdp->options().port));
+    m_tabs->setCurrentIndex(index);
+    removeDockWidget(dock);
+    dock->deleteLater();
+    rdp->setFocus();
 }

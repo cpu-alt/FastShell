@@ -58,6 +58,7 @@ private:
     void showStatus(const QString &text, bool canConnect);
     bool createControl();
     void applyDisplaySize();
+    void pollState();  // reads the control state (its events do not reach us)
 
     Options m_options;
     QStackedLayout *m_stack = nullptr;
@@ -68,6 +69,9 @@ private:
     QPushButton *m_externalButton = nullptr;
     QPointer<QWidget> m_ax;  // the QAxWidget, when embedded
     QTimer m_resizeTimer;  // the remote desktop follows the tab size, debounced
+    QTimer m_stateTimer;   // polls the connection state while a session is active
+    bool m_seenActive = false;  // the control left the "not connected" state
+    bool m_loggedIn = false;
     bool m_connected = false;
     bool m_started = false;
 };

@@ -53,6 +53,7 @@ struct SshConnectResult {
     QString user;           // the user name that worked (reused for SFTP)
     QString password;       // the password that worked, if any (reused for SFTP)
     bool usedLegacyAlgorithms = false;  // connected only thanks to old algorithms
+    QString newHostKey;  // fingerprint saved on this first connection, else empty
 };
 
 SshConnectResult sshConnect(const SshOptions &options, const SshPrompter &prompter);

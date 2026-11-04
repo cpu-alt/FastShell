@@ -141,6 +141,7 @@ void Updater::offer(const update::Release &release, bool interactive) {
     box.addButton(tr("Later"), QMessageBox::RejectRole);
     QPushButton *skipButton = box.addButton(tr("Skip this version"), QMessageBox::DestructiveRole);
     box.setDefaultButton(installButton);
+    installButton->setObjectName(QStringLiteral("accentButton"));  // bold, sized for its bold text
     box.exec();
     if (box.clickedButton() == installButton) {
         install(release);

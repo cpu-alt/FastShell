@@ -1,35 +1,67 @@
 // Copyright 2026 FastShell contributors. Apache-2.0.
 //
-// The application look: dark palette, style sheet, fonts, line icons for the
-// toolbar, and the Windows title bar matched to the app (dark, rounded).
+// The application look: colour themes (chosen in View > Theme and switched
+// live), palette, style sheet, fonts, line icons for the toolbar, and the
+// Windows title bar matched to the theme.
 #pragma once
 
 #include <QColor>
 #include <QIcon>
+#include <QList>
+#include <QObject>
+#include <QString>
+
+#include "app/Theme.h"
 
 class QApplication;
 class QWidget;
 
 namespace style {
 
-inline const QColor Window(0x13, 0x15, 0x1A);   // frame, menus bar, tab strip
-inline const QColor Panel(0x18, 0x1B, 0x21);    // docks, trees
-inline const QColor Surface(0x1F, 0x23, 0x2A);  // inputs, buttons, menus
-inline const QColor Border(0x2C, 0x31, 0x3A);
-inline const QColor Hover(0x27, 0x2C, 0x35);
-inline const QColor Text(0xD8, 0xDC, 0xE3);
-inline const QColor Muted(0x8A, 0x91, 0x9E);
-inline const QColor Accent(0x3D, 0x9B, 0xF5);
-inline const QColor TerminalBackground(0x1B, 0x1D, 0x23);  // same as Theme::background
+struct ColorTheme {
+    QString id;    // saved in the settings
+    QString name;  // shown in the menu
+    bool dark = true;
+    QColor window;   // frame, menu bar, tab strip
+    QColor panel;    // docks, trees
+    QColor surface;  // inputs, buttons, menus
+    QColor border;
+    QColor hover;
+    QColor text;
+    QColor muted;
+    QColor accent;
+    QColor strong;  // text on selections and titles
+    Theme terminal;
+};
 
-// Palette, fonts and style sheet for the whole application.
+// Built-in themes, the first one is the default.
+const QList<ColorTheme> &themes();
+const ColorTheme &current();
+// Accent outlines on panels, tabs, menus and the active pane.
+bool glow();
+
+// Palette, fonts and style sheet for the whole application, from the saved
+// theme. Call once at start.
 void apply(QApplication &app);
+// Switch live (saved in the settings). Emits Notifier::changed().
+void setTheme(const QString &id);
+void setGlow(bool on);
 
-// Line icons drawn at runtime for the toolbar.
+class Notifier : public QObject {
+    Q_OBJECT
+Q_SIGNALS:
+    void changed();
+};
+Notifier *notifier();
+
+// Line icons drawn at runtime for the toolbar, in the current theme colours.
 enum class Glyph {
     NewSession, Terminal, SplitRight, SplitDown, Broadcast, RemoteDesktop, Panels, Close,
     ZoomIn, ZoomOut, Font, Clock, LineNumbers, SessionList, Filer, Outline, FullScreen,
 };
 QIcon icon(Glyph glyph);
+
+// Matches the title bar of a top-level window to the theme (Windows).
+void decorate(QWidget *window);
 
 }  // namespace style

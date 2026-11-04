@@ -95,6 +95,12 @@ Données utilisateur : `%APPDATA%\EMF NET\FastShell\sessions.json` (+ QSettings 
 - **Profils d'équipement** : Cisco = 9600 8N1, FS = 115200 8N1, sans contrôle de flux ; ils ne
   touchent qu'au **série**. Retour arrière = DEL ; bascule ^H par onglet (clic droit).
 - **Mots de passe** : jamais en clair (DPAPI) ; export AES-256-GCM, PBKDF2 600 000 itérations.
+- **Thèmes** : `style::themes()` (Style.cpp, 12 thèmes, le premier = défaut), choisis dans View → Theme
+  et appliqués en direct (`style::Notifier::changed` : terminaux, icônes, barres de titre) ; option
+  « Glowing edges » (liseré d'accent). Réglages `appearance/theme` et `appearance/glow`. Utiliser
+  `style::current()` au lieu de couleurs en dur.
+- **Clé d'hôte SSH** : nouvel équipement accepté sans question (clé retenue) ; clé changée refusée.
+- **RDP** : déplaçable dans un panneau (clic droit sur l'onglet → Move to a panel).
 - **Logo** : hexagone en tuile 3D avec `>` et curseur. Après modification de `Logo.h`, relancer
   `tools/make_icon assets/fastshell.ico docs/logo.png`.
 
@@ -111,6 +117,11 @@ Données utilisateur : `%APPDATA%\EMF NET\FastShell\sessions.json` (+ QSettings 
 - **QSS** : les sous-contrôles (flèches de combo/spinbox, défilement des onglets) doivent être
   stylés explicitement, sinon Qt dessine des blocs carrés qui dépassent des coins arrondis.
 - **Historique** : anneau arrondi à la puissance de 2 supérieure (100 → 128 lignes).
+- **Contrôle RDP (ActiveX)** : ses événements (OnConnected, OnDisconnected...) n'arrivent jamais à Qt ;
+  `RdpView::pollState` lit la propriété `Connected` toutes les 500 ms. Le contrôle doit être visible
+  pendant la connexion (sinon ses fenêtres d'identifiants / certificat restent cachées).
+  Ne jamais tester sur les vrais serveurs de l'utilisateur (identifiants Windows enregistrés =
+  connexion réelle) : utiliser `rdp 192.0.2.1` (adresse de test injoignable).
 - **Windows PowerShell 5.1** ignore les touches tapées avant la fin de son chargement.
 
 ## Tester l'interface sans gêner l'utilisateur

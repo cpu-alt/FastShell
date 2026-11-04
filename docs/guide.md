@@ -66,8 +66,11 @@ Retour à la [présentation](../README.md).
   desktop, Ctrl+Shift+R, ou le bouton écran de la barre d'outils). Le bureau s'affiche dans un
   onglet, avec le moteur de Bureau à distance de Windows (contrôle `mstscax.dll`, le même que
   mstsc) : utilisateur `DOMAINE\utilisateur` accepté, presse-papiers partagé, le bureau suit la
-  taille de l'onglet. Clic droit sur l'onglet : se déconnecter / reconnecter, ou ouvrir la même
-  session dans mstsc. Il faut Qt ActiveQt à la compilation (voir plus bas) ; sans lui, l'onglet
+  taille de l'onglet. Connexion rapide : compression, cache d'images persistant et qualité du
+  réseau détectée automatiquement. Clic droit sur l'onglet : se déconnecter / reconnecter, ouvrir
+  la même session dans mstsc, ou **Move to a panel** : le bureau quitte l'onglet pour un panneau
+  qu'on ancre sur n'importe quel côté ou qu'on détache en fenêtre, comme le Filer (clic droit sur
+  le titre du panneau : Move back to a tab). Il faut Qt ActiveQt à la compilation (voir plus bas) ; sans lui, l'onglet
   propose d'ouvrir la session dans mstsc.
 - **Icône du système** : chaque session peut afficher le logo de son système (Windows Server,
   Windows, Ubuntu, Debian, Red Hat, CentOS/Rocky/Alma, Linux, serveur, Cisco, FS, Fortinet,
@@ -77,11 +80,15 @@ Retour à la [présentation](../README.md).
 
 ## Interface
 
-Thème sombre moderne : onglets arrondis reliés au terminal, barre d'outils à icônes (nouvelle
+12 thèmes au choix (View → Theme, changement immédiat) : FastShell Dark (par défaut),
+FastShell Violet, FastShell Light, et des classiques de VS Code (Dracula, One Dark Pro, Monokai,
+Nord, Tokyo Night, Catppuccin Mocha, GitHub Dark et Light, Solarized Dark). Chacun colore
+l'interface et le terminal. **Glowing edges** (même menu) ajoute un fin liseré de la couleur
+d'accent sur les panneaux, onglets, menus et le panneau actif. Onglets arrondis reliés au terminal, barre d'outils à icônes (nouvelle
 session, onglet local, bureau à distance, coupures, taper partout, puis la vue : zoom −/+, police,
 heure et numéros de ligne, panneaux Session / Filer / Outline, plein écran), menus et champs
-arrondis, barres de défilement fines, police Segoe UI Variable, et barre de titre Windows sombre
-aux couleurs de l'app (coins arrondis sous Windows 11).
+arrondis, barres de défilement fines, police Segoe UI Variable, et barre de titre Windows
+aux couleurs du thème (coins arrondis sous Windows 11).
 
 - **Session** (à droite) : sessions enregistrées rangées dans des dossiers et sous-dossiers.
   Clic droit pour créer, modifier, dupliquer, renommer ou supprimer ; glisser-déposer pour
@@ -117,7 +124,8 @@ aux couleurs de l'app (coins arrondis sous Windows 11).
   denied » entre deux). Un utilisateur ou mot de passe enregistré est utilisé tel quel. Aucune
   clé n'est essayée toute seule (ni agent, ni clés de `~/.ssh`, ni `~/.ssh/config`) : seule la clé
   privée choisie dans la session ou l'utilisateur partagé sert. Mot de passe et
-  keyboard-interactive, vérification des clés d'hôte via `known_hosts`. Ctrl+C annule la saisie.
+  keyboard-interactive, clés d'hôte dans `known_hosts` : un nouvel équipement est accepté sans question
+  et sa clé est retenue, une clé qui change ensuite est refusée. Ctrl+C annule la saisie.
 - Compatibilité avec les vieux équipements (switchs, routeurs) : si le serveur ne propose que des
   algorithmes SHA-1/CBC, la connexion est retentée automatiquement avec eux, comme PuTTY ou
   MobaXterm ; l'info est au survol de l'onglet et dans la barre d'état. L'option « Old devices » de la

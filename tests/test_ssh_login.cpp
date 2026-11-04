@@ -7,6 +7,7 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QFile>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 
@@ -126,6 +127,7 @@ struct LoginRun {
     SshConnectResult result;
     QStringList prompts;
     QStringList notices;
+    int questions = 0;  // GUI questions (there should be none)
 };
 
 // Connects with the answers typed "in the terminal", one per prompt.
@@ -135,7 +137,10 @@ LoginRun connect(const SshOptions &options, QStringList answers) {
     std::mutex mutex;
     SshPrompter prompter;
     prompter.guiContext = &gui;
-    prompter.confirm = [](const QString &) { return true; };
+    prompter.confirm = [&](const QString &) {
+        ++run.questions;
+        return false;
+    };
     prompter.askInTerminal = [&](const QString &prompt, bool) -> std::optional<QString> {
         std::lock_guard lock(mutex);
         run.prompts << prompt;
@@ -273,6 +278,36 @@ TEST_F(SshLogin, UserOnlyGoesStraightToThePassword) {
     ASSERT_TRUE(waitLoggedIn(backend, shown, m_server.authenticated));
     EXPECT_EQ(shown, QByteArray("alice@127.0.0.1's password: \r\nAccess denied\r\n"
                                 "alice@127.0.0.1's password: \r\n"));
+}
+
+TEST_F(SshLogin, NewHostIsTrustedWithoutAQuestion) {
+    m_options.user = QStringLiteral("alice");
+    m_options.password = QStringLiteral("secret");
+    const LoginRun first = connect(m_options, {});
+    ASSERT_TRUE(first.result.session) << first.result.error.toStdString();
+    EXPECT_EQ(first.questions, 0);
+    EXPECT_FALSE(first.result.newHostKey.isEmpty());
+    // The key is remembered, so a later change is detected (next test).
+    QFile saved(m_options.knownHostsFile);
+    ASSERT_TRUE(saved.open(QIODevice::ReadOnly));
+    EXPECT_TRUE(saved.readAll().contains("[127.0.0.1]:"));
+}
+
+TEST_F(SshLogin, ChangedHostKeyIsStillRefused) {
+    // Another key saved for this host: the connection must be refused.
+    QByteArray blob("\0\0\0\x0bssh-ed25519\0\0\0\x20", 19 + 4);
+    blob += QByteArray(32, '\x42');
+    QFile file(m_options.knownHostsFile);
+    ASSERT_TRUE(file.open(QIODevice::WriteOnly));
+    file.write(QStringLiteral("[127.0.0.1]:%1 ssh-ed25519 %2\n").arg(m_options.port).arg(QString::fromLatin1(blob.toBase64())).toUtf8());
+    file.close();
+
+    m_options.user = QStringLiteral("alice");
+    m_options.password = QStringLiteral("secret");
+    const LoginRun run = connect(m_options, {});
+    EXPECT_FALSE(run.result.session);
+    EXPECT_TRUE(run.result.error.contains(QStringLiteral("has changed"))) << run.result.error.toStdString();
+    EXPECT_EQ(run.questions, 0);
 }
 
 TEST_F(SshLogin, CtrlCCancels) {

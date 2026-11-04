@@ -25,8 +25,8 @@ Retour à la [politique de sécurité](../SECURITY.md).
   `sessions.json` ; aucun journal (`qDebug`, fichiers de log) dans l'application.
 - **Exports** : AES-256-GCM (authentifié), nonce aléatoire de 96 bits par message, sel de 16 octets,
   PBKDF2-HMAC-SHA256 ; un fichier modifié ou un mauvais mot de passe est refusé.
-- **Clés d'hôte SSH** : vérifiées avec `known_hosts`. Clé inconnue : empreinte SHA-256 affichée et
-  confirmation demandée. Clé **changée** : connexion refusée (attaque de l'homme du milieu possible).
+- **Clés d'hôte SSH** : vérifiées avec `known_hosts`. Clé inconnue : acceptée sans question à la première
+  connexion et retenue (choix de l'utilisateur, comme un « trust on first use »). Clé **changée** : connexion refusée (attaque de l'homme du milieu possible).
 - **libssh 0.12** : protégée contre Terrapin (CVE-2023-48795) par le « strict KEX ».
 - **Repli SHA-1/CBC** pour les vieux équipements : il ne fait qu'**ajouter** ces algorithmes après
   les modernes ; la clé d'hôte reste vérifiée. `diffie-hellman-group1-sha1` n'est jamais activé
@@ -52,7 +52,7 @@ Retour à la [politique de sécurité](../SECURITY.md).
   toujours dans l'écran, réponses toujours fixes.
 - `Security.TerminalNeverReportsItsTitleOrClipboard`, `Security.TerminalBoundsHugeRequests`.
 - `Security.TelnetSurvivesHostileServer`, `Security.TelnetCapsSubnegotiation`.
-- `SshLogin.*` — login dans le terminal, 3 essais, aucune clé essayée, Ctrl+C.
+- `SshLogin.*` — login dans le terminal, 3 essais, aucune clé essayée, nouvel hôte accepté, clé changée refusée, Ctrl+C.
 
 `fastshell_session_tests` :
 

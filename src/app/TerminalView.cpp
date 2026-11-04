@@ -19,6 +19,7 @@
 #include <algorithm>
 
 #include "app/KeyMapper.h"
+#include "app/Style.h"
 #include "app/TextSafety.h"
 #include "widgets/ScrollBar.h"
 
@@ -69,6 +70,11 @@ TerminalView::TerminalView(BackendFactory factory, QWidget *parent)
     // Drops (panes, sessions from the tree) are handled by the TabPage around.
     setMouseTracking(true);
     setCursor(Qt::IBeamCursor);
+    m_theme = style::current().terminal;
+    connect(style::notifier(), &style::Notifier::changed, this, [this] {
+        m_theme = style::current().terminal;
+        update();
+    });
 
     m_screen->onReply = [this](const std::string &reply) { send(QByteArray::fromStdString(reply)); };
     m_screen->onTitle = [this](const std::string &title) {
@@ -401,16 +407,17 @@ void TerminalView::paintEvent(QPaintEvent *) {
     run.reserve(columns);
 
     // Gutter: timestamp and line number, command lines highlighted.
-    const QColor gutterText(0x5C, 0x63, 0x70);
-    const QColor commandBand(0x26, 0x2A, 0x33);
-    const QColor accent(0x61, 0xAF, 0xEF);
+    const QColor gutterText = style::current().muted;
+    const style::ColorTheme &ui = style::current();
+    const QColor commandBand = ui.dark ? m_theme.background.lighter(135) : m_theme.background.darker(106);
+    const QColor accent = ui.accent;
     auto isCommandLine = [this](std::int64_t line) {
         auto it = std::lower_bound(m_commands.begin(), m_commands.end(), line,
                                    [](const Command &c, std::int64_t l) { return c.line < l; });
         return it != m_commands.end() && it->line == line;
     };
     if (m_gutterWidth > 0) {
-        painter.fillRect(QRectF(0, 0, m_padding + m_gutterWidth - 6, height()), QColor(0x17, 0x19, 0x1E));
+        painter.fillRect(QRectF(0, 0, m_padding + m_gutterWidth - 6, height()), ui.dark ? m_theme.background.darker(115) : m_theme.background.darker(103));
     }
 
     for (int r = 0; r < rows; ++r) {
@@ -574,6 +581,14 @@ void TerminalView::paintEvent(QPaintEvent *) {
         painter.drawRect(QRectF(1, 1, width() - m_scrollBar->width() - 2, height() - 2));
     } else if (m_activeFrame && !m_headerVisible) {
         painter.fillRect(QRectF(0, 0, width() - m_scrollBar->width(), 2), m_theme.cursor);
+    }
+    if (style::glow() && m_activeFrame && !m_broadcast) {
+        // Glowing edges: a thin accent outline around the active pane.
+        QColor edge = style::current().accent;
+        edge.setAlpha(170);
+        painter.setPen(QPen(edge, 1));
+        painter.setBrush(Qt::NoBrush);
+        painter.drawRect(QRectF(0.5, 0.5, width() - m_scrollBar->width() - 1, height() - 1));
     }
     if (m_headerVisible) {
         paintHeader(painter);
@@ -940,11 +955,15 @@ void TerminalView::paintHeader(QPainter &p) {
     const int h = headerHeight();
     const QRect bar(0, 0, width(), h);
     const QColor accent = m_paneColor.isValid() ? m_paneColor : m_theme.cursor;
-    p.fillRect(bar, m_activeFrame ? QColor(0x1E, 0x25, 0x30) : QColor(0x17, 0x1A, 0x20));
+    const style::ColorTheme &ui = style::current();
+    QColor activeBar = ui.panel;
+    activeBar.setRgbF(activeBar.redF() * 0.86f + ui.accent.redF() * 0.14f, activeBar.greenF() * 0.86f + ui.accent.greenF() * 0.14f,
+                      activeBar.blueF() * 0.86f + ui.accent.blueF() * 0.14f);
+    p.fillRect(bar, m_activeFrame ? activeBar : ui.panel);
     if (m_activeFrame) {
         p.fillRect(QRect(0, h - 2, width(), 2), m_theme.cursor);
     } else {
-        p.fillRect(QRect(0, h - 1, width(), 1), QColor(0x24, 0x28, 0x30));
+        p.fillRect(QRect(0, h - 1, width(), 1), ui.border);
     }
 
     QFont font = QApplication::font();
@@ -960,7 +979,7 @@ void TerminalView::paintHeader(QPainter &p) {
     const QPoint mouse = mapFromGlobal(QCursor::pos());
     p.setPen(Qt::NoPen);
     if (m_zoomRect.contains(mouse)) {
-        p.setBrush(QColor(0xFF, 0xFF, 0xFF, 26));
+        p.setBrush(ui.hover);
         p.drawRoundedRect(QRectF(m_zoomRect), 5, 5);
     }
     const bool closeHover = m_closeRect.contains(mouse);
@@ -968,7 +987,7 @@ void TerminalView::paintHeader(QPainter &p) {
         p.setBrush(QColor(0xE5, 0x48, 0x4D));
         p.drawRoundedRect(QRectF(m_closeRect), 5, 5);
     }
-    QPen icon(QColor(0xAB, 0xB2, 0xBF), 1.4);
+    QPen icon(ui.muted, 1.4);
     p.setPen(icon);
     p.setBrush(Qt::NoBrush);
     const QRectF z = QRectF(m_zoomRect).adjusted(5, 5, -5, -5);
@@ -985,7 +1004,7 @@ void TerminalView::paintHeader(QPainter &p) {
 
     // Grip (the bar can be dragged), colored dot, session name (+ state).
     p.setPen(Qt::NoPen);
-    p.setBrush(QColor(0x5C, 0x63, 0x70));
+    p.setBrush(ui.muted);
     for (int row = 0; row < 3; ++row) {
         for (int col = 0; col < 2; ++col) {
             p.drawEllipse(QPointF(8 + col * 4, h / 2.0 - 4 + row * 4), 1.1, 1.1);
@@ -996,7 +1015,7 @@ void TerminalView::paintHeader(QPainter &p) {
     QString title = m_paneTitle.isEmpty() ? m_title : m_paneTitle;
     if (m_finished) title += tr("  (disconnected)");
     if (m_zoomed) title += tr("  (enlarged)");
-    p.setPen(m_activeFrame ? QColor(0xE6, 0xE9, 0xEF) : QColor(0x8A, 0x91, 0x9E));
+    p.setPen(m_activeFrame ? ui.strong : ui.muted);
     const int textWidth = m_zoomRect.left() - 34 - 8;
     p.drawText(QRect(34, 0, textWidth, h), Qt::AlignVCenter | Qt::AlignLeft,
                fm.elidedText(title, Qt::ElideRight, textWidth));

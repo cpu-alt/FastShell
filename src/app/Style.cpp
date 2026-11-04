@@ -10,7 +10,9 @@
 #include <QPainterPath>
 #include <QPalette>
 #include <QPixmap>
+#include <QSettings>
 #include <QStandardPaths>
+#include <QStringList>
 #include <QStyleFactory>
 #include <QWidget>
 
@@ -23,16 +25,140 @@ namespace style {
 
 namespace {
 
+QColor hex(const char *value) {
+    return QColor(QLatin1String(value));
+}
+
+// One theme from its colours: 9 interface colours, then the terminal
+// (foreground, background, cursor, selection) and its 16 ANSI colours.
+ColorTheme make(const char *id, const QString &name, bool dark, std::initializer_list<const char *> ui,
+                std::initializer_list<const char *> term, std::initializer_list<const char *> ansi) {
+    ColorTheme t;
+    t.id = QLatin1String(id);
+    t.name = name;
+    t.dark = dark;
+    const QList<const char *> u(ui);
+    t.window = hex(u[0]);
+    t.panel = hex(u[1]);
+    t.surface = hex(u[2]);
+    t.border = hex(u[3]);
+    t.hover = hex(u[4]);
+    t.text = hex(u[5]);
+    t.muted = hex(u[6]);
+    t.accent = hex(u[7]);
+    t.strong = hex(u[8]);
+    const QList<const char *> c(term);
+    t.terminal.foreground = hex(c[0]);
+    t.terminal.background = hex(c[1]);
+    t.terminal.cursor = hex(c[2]);
+    t.terminal.selection = hex(c[3]);
+    std::size_t i = 0;
+    for (const char *a : ansi) t.terminal.ansi[i++] = hex(a);
+    return t;
+}
+
+const char *const GitHubLightAnsi[] = {"#24292F", "#CF222E", "#116329", "#4D2D00", "#0969DA", "#8250DF", "#1B7C83", "#6E7781",
+                                       "#57606A", "#A40E26", "#1A7F37", "#633C01", "#218BFF", "#A475F9", "#3192AA", "#8C959F"};
+
+QList<ColorTheme> buildThemes() {
+    QList<ColorTheme> list;
+    // FastShell's own themes first: the original dark one is the default.
+    list << make("dark", QObject::tr("FastShell Dark"), true,
+                 {"#13151A", "#181B21", "#1F232A", "#2C313A", "#272C35", "#D8DCE3", "#8A919E", "#3D9BF5", "#FFFFFF"},
+                 {"#D4D7DD", "#1B1D23", "#5FB3FF", "#2F4F7A"},
+                 {"#1B1D23", "#E06C75", "#98C379", "#E5C07B", "#61AFEF", "#C678DD", "#56B6C2", "#ABB2BF",
+                  "#5C6370", "#FF7B86", "#B5E890", "#FFD68A", "#7DC4FF", "#E09AF5", "#6FD6E0", "#FFFFFF"});
+    list << make("violet", QObject::tr("FastShell Violet"), true,
+                 {"#0F0C15", "#15111D", "#1E1828", "#2E2540", "#2A2238", "#E6E1F0", "#9389A8", "#A855F7", "#FFFFFF"},
+                 {"#E9E4F2", "#120E19", "#C084FC", "#4C2E7A"},
+                 {"#120E19", "#F7768E", "#9ECE6A", "#E0AF68", "#7AA2F7", "#C084FC", "#7DCFFF", "#C9C2D8",
+                  "#5B5170", "#FF8FA3", "#B9F27C", "#FFD089", "#9AB8FF", "#D8B4FE", "#A5E3FF", "#FFFFFF"});
+    list << make("light", QObject::tr("FastShell Light"), false,
+                 {"#ECEEF3", "#F6F7FA", "#FFFFFF", "#D5D9E0", "#E2E5EC", "#1F2328", "#6B7280", "#7C3AED", "#111318"},
+                 {"#24292F", "#FFFFFF", "#7C3AED", "#DCD0FA"},
+                 {GitHubLightAnsi[0], GitHubLightAnsi[1], GitHubLightAnsi[2], GitHubLightAnsi[3], GitHubLightAnsi[4],
+                  GitHubLightAnsi[5], GitHubLightAnsi[6], GitHubLightAnsi[7], GitHubLightAnsi[8], GitHubLightAnsi[9],
+                  GitHubLightAnsi[10], GitHubLightAnsi[11], GitHubLightAnsi[12], GitHubLightAnsi[13], GitHubLightAnsi[14],
+                  GitHubLightAnsi[15]});
+    // Inspired by the most popular VS Code themes.
+    list << make("dracula", QStringLiteral("Dracula"), true,
+                 {"#1E1F29", "#21222C", "#282A36", "#3A3C4E", "#343746", "#F8F8F2", "#8B93B8", "#BD93F9", "#FFFFFF"},
+                 {"#F8F8F2", "#282A36", "#F8F8F2", "#44475A"},
+                 {"#21222C", "#FF5555", "#50FA7B", "#F1FA8C", "#BD93F9", "#FF79C6", "#8BE9FD", "#F8F8F2",
+                  "#6272A4", "#FF6E6E", "#69FF94", "#FFFFA5", "#D6ACFF", "#FF92DF", "#A4FFFF", "#FFFFFF"});
+    list << make("onedark", QStringLiteral("One Dark Pro"), true,
+                 {"#1E2227", "#21252B", "#282C34", "#3B4048", "#2C313A", "#D7DAE0", "#7F848E", "#61AFEF", "#FFFFFF"},
+                 {"#ABB2BF", "#282C34", "#528BFF", "#3E4451"},
+                 {"#3F4451", "#E06C75", "#98C379", "#D19A66", "#61AFEF", "#C678DD", "#56B6C2", "#D7DAE0",
+                  "#4F5666", "#BE5046", "#A5E075", "#E5C07B", "#4DC4FF", "#DE73FF", "#4CD1E0", "#E6E6E6"});
+    list << make("monokai", QStringLiteral("Monokai"), true,
+                 {"#1E1F1C", "#222320", "#272822", "#3B3C35", "#33342D", "#F8F8F2", "#90908A", "#F92672", "#FFFFFF"},
+                 {"#F8F8F2", "#272822", "#F8F8F0", "#49483E"},
+                 {"#272822", "#F92672", "#A6E22E", "#F4BF75", "#66D9EF", "#AE81FF", "#A1EFE4", "#F8F8F2",
+                  "#75715E", "#F92672", "#A6E22E", "#F4BF75", "#66D9EF", "#AE81FF", "#A1EFE4", "#F9F8F5"});
+    list << make("nord", QStringLiteral("Nord"), true,
+                 {"#2B303B", "#2E3440", "#353C4A", "#434C5E", "#3E4656", "#ECEFF4", "#9AA3B5", "#88C0D0", "#FFFFFF"},
+                 {"#D8DEE9", "#2E3440", "#D8DEE9", "#434C5E"},
+                 {"#3B4252", "#BF616A", "#A3BE8C", "#EBCB8B", "#81A1C1", "#B48EAD", "#88C0D0", "#E5E9F0",
+                  "#4C566A", "#BF616A", "#A3BE8C", "#EBCB8B", "#81A1C1", "#B48EAD", "#8FBCBB", "#ECEFF4"});
+    list << make("tokyonight", QStringLiteral("Tokyo Night"), true,
+                 {"#16161E", "#1A1B26", "#1F2335", "#292E42", "#24283B", "#C0CAF5", "#737AA2", "#7AA2F7", "#FFFFFF"},
+                 {"#C0CAF5", "#1A1B26", "#C0CAF5", "#33467C"},
+                 {"#15161E", "#F7768E", "#9ECE6A", "#E0AF68", "#7AA2F7", "#BB9AF7", "#7DCFFF", "#A9B1D6",
+                  "#414868", "#F7768E", "#9ECE6A", "#E0AF68", "#7AA2F7", "#BB9AF7", "#7DCFFF", "#C0CAF5"});
+    list << make("catppuccin", QStringLiteral("Catppuccin Mocha"), true,
+                 {"#11111B", "#181825", "#1E1E2E", "#313244", "#2A2B3C", "#CDD6F4", "#9399B2", "#CBA6F7", "#FFFFFF"},
+                 {"#CDD6F4", "#1E1E2E", "#F5E0DC", "#45475A"},
+                 {"#45475A", "#F38BA8", "#A6E3A1", "#F9E2AF", "#89B4FA", "#F5C2E7", "#94E2D5", "#BAC2DE",
+                  "#585B70", "#F38BA8", "#A6E3A1", "#F9E2AF", "#89B4FA", "#F5C2E7", "#94E2D5", "#A6ADC8"});
+    list << make("githubdark", QStringLiteral("GitHub Dark"), true,
+                 {"#010409", "#0D1117", "#161B22", "#30363D", "#21262D", "#E6EDF3", "#8D96A0", "#2F81F7", "#FFFFFF"},
+                 {"#E6EDF3", "#0D1117", "#2F81F7", "#264F78"},
+                 {"#484F58", "#FF7B72", "#3FB950", "#D29922", "#58A6FF", "#BC8CFF", "#39C5CF", "#B1BAC4",
+                  "#6E7681", "#FFA198", "#56D364", "#E3B341", "#79C0FF", "#D2A8FF", "#56D4DD", "#FFFFFF"});
+    list << make("githublight", QStringLiteral("GitHub Light"), false,
+                 {"#F6F8FA", "#FFFFFF", "#FFFFFF", "#D0D7DE", "#EAEEF2", "#1F2328", "#656D76", "#0969DA", "#0D1117"},
+                 {"#1F2328", "#FFFFFF", "#0969DA", "#B6E3FF"},
+                 {GitHubLightAnsi[0], GitHubLightAnsi[1], GitHubLightAnsi[2], GitHubLightAnsi[3], GitHubLightAnsi[4],
+                  GitHubLightAnsi[5], GitHubLightAnsi[6], GitHubLightAnsi[7], GitHubLightAnsi[8], GitHubLightAnsi[9],
+                  GitHubLightAnsi[10], GitHubLightAnsi[11], GitHubLightAnsi[12], GitHubLightAnsi[13], GitHubLightAnsi[14],
+                  GitHubLightAnsi[15]});
+    list << make("solarized", QStringLiteral("Solarized Dark"), true,
+                 {"#00212B", "#002B36", "#073642", "#0E4A58", "#0A3F4C", "#EEE8D5", "#93A1A1", "#268BD2", "#FFFFFF"},
+                 {"#93A1A1", "#002B36", "#93A1A1", "#0E4A58"},
+                 {"#073642", "#DC322F", "#859900", "#B58900", "#268BD2", "#D33682", "#2AA198", "#EEE8D5",
+                  "#586E75", "#CB4B16", "#586E75", "#657B83", "#839496", "#6C71C4", "#93A1A1", "#FDF6E3"});
+    return list;
+}
+
+int g_current = 0;
+bool g_glow = false;
+
+QColor mix(const QColor &a, const QColor &b, qreal t) {
+    return QColor::fromRgbF(float(a.redF() + (b.redF() - a.redF()) * t), float(a.greenF() + (b.greenF() - a.greenF()) * t),
+                            float(a.blueF() + (b.blueF() - a.blueF()) * t));
+}
+
 QString rgba(const QColor &c, int alpha) {
     return QStringLiteral("rgba(%1,%2,%3,%4)").arg(c.red()).arg(c.green()).arg(c.blue()).arg(alpha);
 }
 
+// A bit further from the background: lighter on dark themes, darker on light ones.
+QColor raise(const QColor &c, int percent) {
+    return current().dark ? c.lighter(100 + percent) : c.darker(100 + percent / 2);
+}
+
+QColor glyphColor() {
+    return mix(current().text, current().muted, 0.25);
+}
+
 // The style sheet needs files for its small images (check mark, arrows): draw
-// them once in the app's own cache folder (the app has no resource file).
+// them once in the app's own cache folder (the app has no resource file). The
+// colour is in the name, so each theme gets its own images.
 QString styleImage(const QString &name, const QColor &color, const QPolygonF &line, qreal width) {
     QString dir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
     if (dir.isEmpty() || !QDir().mkpath(dir)) dir = QDir::tempPath();
-    const QString path = dir + QStringLiteral("/style-") + name + QStringLiteral(".png");
+    const QString path = dir + QStringLiteral("/style-") + name + QLatin1Char('-') + color.name().mid(1) + QStringLiteral(".png");
     QPixmap pixmap(30, 30);
     pixmap.fill(Qt::transparent);
     QPainter p(&pixmap);
@@ -49,16 +175,16 @@ QString checkImage() {
                       QPolygonF({QPointF(7, 15.5), QPointF(12.5, 21), QPointF(23, 9)}), 3.6);
 }
 QString chevronDown() {
-    return styleImage(QStringLiteral("down"), Muted, QPolygonF({QPointF(7, 11), QPointF(15, 19), QPointF(23, 11)}), 3.4);
+    return styleImage(QStringLiteral("down"), current().muted, QPolygonF({QPointF(7, 11), QPointF(15, 19), QPointF(23, 11)}), 3.4);
 }
 QString chevronLeft() {
-    return styleImage(QStringLiteral("left"), Text, QPolygonF({QPointF(19, 7), QPointF(11, 15), QPointF(19, 23)}), 3.4);
+    return styleImage(QStringLiteral("left"), current().text, QPolygonF({QPointF(19, 7), QPointF(11, 15), QPointF(19, 23)}), 3.4);
 }
 QString chevronRight() {
-    return styleImage(QStringLiteral("right"), Text, QPolygonF({QPointF(11, 7), QPointF(19, 15), QPointF(11, 23)}), 3.4);
+    return styleImage(QStringLiteral("right"), current().text, QPolygonF({QPointF(11, 7), QPointF(19, 15), QPointF(11, 23)}), 3.4);
 }
 QString chevronUp() {
-    return styleImage(QStringLiteral("up"), Muted, QPolygonF({QPointF(7, 19), QPointF(15, 11), QPointF(23, 19)}), 3.4);
+    return styleImage(QStringLiteral("up"), current().muted, QPolygonF({QPointF(7, 19), QPointF(15, 11), QPointF(23, 19)}), 3.4);
 }
 
 QString styleSheet() {
@@ -74,7 +200,7 @@ QMenuBar::item:pressed { background: @accentSoft; }
 
 QMenu { background: @surface; border: 1px solid @border; border-radius: 10px; padding: 6px; }
 QMenu::item { padding: 6px 26px 6px 12px; border-radius: 6px; color: @text; }
-QMenu::item:selected { background: @accentSoft; color: white; }
+QMenu::item:selected { background: @accentSoft; color: @strong; }
 QMenu::item:disabled { color: @muted; }
 QMenu::separator { height: 1px; background: @border; margin: 5px 8px; }
 QMenu::icon { padding-left: 6px; }
@@ -99,7 +225,7 @@ QTabBar::tab {
     border-top-left-radius: 9px; border-top-right-radius: 9px;
 }
 QTabBar::tab:hover:!selected { background: @hover; color: @text; }
-QTabBar::tab:selected { background: @terminal; color: white; }
+QTabBar::tab:selected { background: @terminal; color: @strong; }
 QTabBar::scroller { width: 48px; }
 QTabBar QToolButton { background: @window; border: none; border-radius: 6px; margin: 6px 1px 2px 1px; padding: 0; }
 QTabBar QToolButton:hover { background: @hover; }
@@ -114,12 +240,12 @@ QDockWidget::title { background: @panel; padding: 8px 10px; text-align: left; bo
 QDockWidget > QWidget { background: @panel; }
 
 QTreeView, QListView, QTableView, QTreeWidget, QListWidget, QTableWidget {
-    background: @panel; alternate-background-color: #1C2027; border: none; outline: 0;
-    selection-background-color: @accentSoft; selection-color: white;
+    background: @panel; alternate-background-color: @alt; border: none; outline: 0;
+    selection-background-color: @accentSoft; selection-color: @strong;
 }
 QTreeView::item, QListView::item { padding: 3px 2px; border-radius: 5px; }
 QTreeView::item:hover, QListView::item:hover { background: @hover; }
-QTreeView::item:selected, QListView::item:selected { background: @accentSoft; color: white; }
+QTreeView::item:selected, QListView::item:selected { background: @accentSoft; color: @strong; }
 QHeaderView::section { background: @panel; color: @muted; border: none; border-bottom: 1px solid @border; padding: 5px 8px; }
 
 QLineEdit, QPlainTextEdit, QTextEdit {
@@ -141,8 +267,8 @@ QSpinBox::down-arrow { image: url(@chevronDown); width: 8px; height: 8px; }
 QSpinBox::up-arrow:disabled, QSpinBox::down-arrow:disabled { image: none; }
 QToolButton::menu-indicator { image: url(@chevronDown); width: 8px; height: 8px; subcontrol-origin: padding; subcontrol-position: center right; right: 4px; }
 QToolButton#osButton { background: @surface; border: 1px solid @border; border-radius: 7px; padding: 2px 16px 2px 6px; }
-QToolButton#osButton:hover { border-color: #3A414D; }
-QComboBox:hover, QSpinBox:hover { border-color: #3A414D; }
+QToolButton#osButton:hover { border-color: @borderHover; }
+QComboBox:hover, QSpinBox:hover { border-color: @borderHover; }
 QComboBox:focus, QSpinBox:focus { border-color: @accent; }
 QComboBox QAbstractItemView { background: @surface; border: 1px solid @border; border-radius: 8px; padding: 4px; selection-background-color: @accentSoft; }
 
@@ -150,73 +276,122 @@ QPushButton {
     background: @surface; color: @text; border: 1px solid @border; border-radius: 7px;
     padding: 6px 16px; min-height: 18px;
 }
-QPushButton:hover { background: @hover; border-color: #3A414D; }
-QPushButton:pressed { background: #2E343E; }
-QPushButton:default, QPushButton#accentButton { background: @accent; border-color: @accent; color: white; font-weight: 600; }
-QPushButton:default:hover, QPushButton#accentButton:hover { background: #5AACF7; border-color: #5AACF7; }
+QPushButton:hover { background: @hover; border-color: @borderHover; }
+QPushButton:pressed { background: @pressed; }
+QPushButton:default, QPushButton#accentButton { background: @accent; border-color: @accent; color: white; }
+QPushButton#accentButton { font-weight: 600; }
+QPushButton:default:hover, QPushButton#accentButton:hover { background: @accentHover; border-color: @accentHover; }
 QPushButton:disabled { color: @muted; background: @panel; }
 
 QCheckBox, QRadioButton, QLabel { color: @text; background: transparent; }
-QCheckBox::indicator { width: 15px; height: 15px; border: 1px solid #4A515E; border-radius: 4px; background: @surface; }
+QCheckBox::indicator { width: 15px; height: 15px; border: 1px solid @borderHover; border-radius: 4px; background: @surface; }
 QCheckBox::indicator:hover { border-color: @accent; }
 QCheckBox::indicator:checked { background: @accent; border-color: @accent; image: url(@checkImage); }
 
 QScrollBar:vertical { background: transparent; width: 11px; margin: 2px 1px 2px 0; }
 QScrollBar:horizontal { background: transparent; height: 11px; margin: 0 2px 1px 2px; }
-QScrollBar::handle { background: #3A404B; border-radius: 4px; min-height: 28px; min-width: 28px; margin: 2px; }
-QScrollBar::handle:hover { background: #4C5462; }
+QScrollBar::handle { background: @scroll; border-radius: 4px; min-height: 28px; min-width: 28px; margin: 2px; }
+QScrollBar::handle:hover { background: @scrollHover; }
 QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; border: none; background: none; }
 QScrollBar::add-page, QScrollBar::sub-page { background: none; }
 
 QProgressBar { background: @surface; border: none; border-radius: 5px; text-align: center; color: @text; min-height: 10px; }
 QProgressBar::chunk { background: @accent; border-radius: 5px; }
 
-QStatusBar { background: @window; color: @muted; border-top: 1px solid #1C1F25; }
+QStatusBar { background: @window; color: @muted; border-top: 1px solid @border; }
 QStatusBar::item { border: none; }
 QStatusBar QLabel { color: @muted; }
 QStatusBar QToolButton { padding: 2px 8px; color: @muted; }
-QStatusBar QToolButton:checked { color: white; }
+QStatusBar QToolButton:checked { color: @strong; }
 
 QSplitter::handle { background: @window; }
 
 QWidget#rdpView { background: @terminal; }
 QWidget#rdpCard { background: @panel; border: 1px solid @border; border-radius: 14px; }
-QLabel#rdpTitle { font-size: 16pt; font-weight: 600; color: white; }
+QLabel#rdpTitle { font-size: 16pt; font-weight: 600; color: @strong; }
 QLabel#rdpAddress { color: @muted; }
 QLabel#rdpStatus { color: @text; }
 )");
+    if (g_glow) {
+        // Accent outlines ("glowing edges"), on top of the normal style.
+        css += QStringLiteral(R"(
+QToolBar { border-bottom: 1px solid @glow; }
+QStatusBar { border-top: 1px solid @glow; }
+QMenu, QComboBox QAbstractItemView, QToolTip { border: 1px solid @glow; }
+QTabBar::tab:selected { border-top: 2px solid @accent; padding-top: 5px; }
+QDockWidget::title { border-bottom: 1px solid @glow; }
+QDockWidget > QWidget { border: 1px solid @glowSoft; border-top: none; }
+QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit { border-color: @glowSoft; }
+QPushButton:hover, QComboBox:hover, QSpinBox:hover { border-color: @accent; }
+QMainWindow::separator:hover, QSplitter::handle:hover { background: @glow; }
+QWidget#rdpCard { border: 1px solid @glow; }
+)");
+    }
+    const ColorTheme &t = current();
     const std::pair<const char *, QString> tokens[] = {
-        {"@window", Window.name()},     {"@panel", Panel.name()},   {"@surface", Surface.name()},
-        {"@border", Border.name()},     {"@hover", Hover.name()},   {"@text", Text.name()},
-        {"@muted", Muted.name()},       {"@accentSoft", rgba(Accent, 90)},
-        {"@accent", Accent.name()},     {"@terminal", TerminalBackground.name()},
+        // Longest names first: "@accentSoft" must not be read as "@accent".
+        {"@accentSoft", rgba(t.accent, 90)},
+        {"@accentHover", raise(t.accent, 15).name()},
+        {"@borderHover", raise(t.border, 25).name()},
+        {"@scrollHover", raise(t.border, 60).name()},
+        {"@glowSoft", rgba(t.accent, 70)},
+        {"@terminal", t.terminal.background.name()},
+        {"@surface", t.surface.name()},
+        {"@pressed", raise(t.hover, 15).name()},
+        {"@window", t.window.name()},
+        {"@border", t.border.name()},
+        {"@strong", t.strong.name()},
+        {"@accent", t.accent.name()},
+        {"@scroll", raise(t.border, 30).name()},
+        {"@panel", t.panel.name()},
+        {"@hover", t.hover.name()},
+        {"@muted", t.muted.name()},
+        {"@glow", rgba(t.accent, 150)},
+        {"@text", t.text.name()},
+        {"@alt", mix(t.panel, t.surface, 0.4).name()},
     };
-    for (const auto &[token, value] : tokens) css.replace(QLatin1String(token), value);
     css.replace(QLatin1String("@checkImage"), checkImage());
     css.replace(QLatin1String("@chevronDown"), chevronDown());
     css.replace(QLatin1String("@chevronUp"), chevronUp());
     css.replace(QLatin1String("@chevronLeft"), chevronLeft());
     css.replace(QLatin1String("@chevronRight"), chevronRight());
+    for (const auto &[token, value] : tokens) css.replace(QLatin1String(token), value);
     return css;
 }
 
-#ifdef Q_OS_WIN
-// Dark title bar in the app colours, rounded corners on Windows 11. Older
-// versions ignore the attributes they do not know.
-void decorate(QWidget *window) {
-    const HWND hwnd = reinterpret_cast<HWND>(window->winId());
-    const BOOL dark = TRUE;
-    if (FAILED(DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof dark))) {
-        DwmSetWindowAttribute(hwnd, 19 /* same, before Windows 10 20H1 */, &dark, sizeof dark);
-    }
-    const DWORD corners = 2;  // DWMWCP_ROUND
-    DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &corners, sizeof corners);
-    const COLORREF caption = RGB(Window.red(), Window.green(), Window.blue());
-    DwmSetWindowAttribute(hwnd, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof caption);
-    const COLORREF captionText = RGB(Text.red(), Text.green(), Text.blue());
-    DwmSetWindowAttribute(hwnd, 36 /* DWMWA_TEXT_COLOR */, &captionText, sizeof captionText);
+void applyPalette() {
+    const ColorTheme &t = current();
+    const QColor disabled = mix(t.muted, t.panel, 0.35);
+    QPalette palette;
+    palette.setColor(QPalette::Window, t.window);
+    palette.setColor(QPalette::WindowText, t.text);
+    palette.setColor(QPalette::Base, t.surface);
+    palette.setColor(QPalette::AlternateBase, t.panel);
+    palette.setColor(QPalette::Text, t.text);
+    palette.setColor(QPalette::Button, t.surface);
+    palette.setColor(QPalette::ButtonText, t.text);
+    palette.setColor(QPalette::BrightText, t.strong);
+    palette.setColor(QPalette::Highlight, t.accent);
+    palette.setColor(QPalette::HighlightedText, Qt::white);
+    palette.setColor(QPalette::Link, t.dark ? t.accent.lighter(120) : t.accent);
+    palette.setColor(QPalette::ToolTipBase, t.surface);
+    palette.setColor(QPalette::ToolTipText, t.text);
+    palette.setColor(QPalette::PlaceholderText, mix(t.muted, t.surface, 0.25));
+    palette.setColor(QPalette::Mid, t.border);
+    palette.setColor(QPalette::Dark, t.window);
+    palette.setColor(QPalette::Disabled, QPalette::Text, disabled);
+    palette.setColor(QPalette::Disabled, QPalette::ButtonText, disabled);
+    palette.setColor(QPalette::Disabled, QPalette::WindowText, disabled);
+    QApplication::setPalette(palette);
 }
-#endif
+
+void applyAll() {
+    applyPalette();
+    qApp->setStyleSheet(styleSheet());
+    for (QWidget *w : QApplication::topLevelWidgets()) {
+        if (w->property("fs_decorated").toBool()) decorate(w);
+    }
+}
 
 // Decorates every top-level window (main window, dialogs) when first shown.
 class WindowDecorator : public QObject {
@@ -231,9 +406,7 @@ protected:
             if (widget->isWindow() && (type == Qt::Window || type == Qt::Dialog)
                 && !widget->property("fs_decorated").toBool()) {
                 widget->setProperty("fs_decorated", true);
-#ifdef Q_OS_WIN
                 decorate(widget);
-#endif
             }
         }
         return QObject::eventFilter(watched, event);
@@ -241,6 +414,48 @@ protected:
 };
 
 }  // namespace
+
+const QList<ColorTheme> &themes() {
+    static const QList<ColorTheme> list = buildThemes();
+    return list;
+}
+
+const ColorTheme &current() {
+    return themes().at(g_current);
+}
+
+bool glow() {
+    return g_glow;
+}
+
+Notifier *notifier() {
+    static Notifier instance;
+    return &instance;
+}
+
+// Title bar in the theme colours (dark or light), rounded corners on
+// Windows 11. Older versions ignore the attributes they do not know.
+void decorate(QWidget *window) {
+#ifdef Q_OS_WIN
+    const ColorTheme &t = current();
+    const HWND hwnd = reinterpret_cast<HWND>(window->winId());
+    const BOOL dark = t.dark ? TRUE : FALSE;
+    if (FAILED(DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark, sizeof dark))) {
+        DwmSetWindowAttribute(hwnd, 19 /* same, before Windows 10 20H1 */, &dark, sizeof dark);
+    }
+    const DWORD corners = 2;  // DWMWCP_ROUND
+    DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &corners, sizeof corners);
+    const COLORREF caption = RGB(t.window.red(), t.window.green(), t.window.blue());
+    DwmSetWindowAttribute(hwnd, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof caption);
+    const COLORREF captionText = RGB(t.text.red(), t.text.green(), t.text.blue());
+    DwmSetWindowAttribute(hwnd, 36 /* DWMWA_TEXT_COLOR */, &captionText, sizeof captionText);
+    const QColor edge = g_glow ? t.accent : t.border;
+    const COLORREF border = RGB(edge.red(), edge.green(), edge.blue());
+    DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, &border, sizeof border);
+#else
+    Q_UNUSED(window);
+#endif
+}
 
 void apply(QApplication &app) {
     QApplication::setStyle(QStyleFactory::create(QStringLiteral("Fusion")));
@@ -256,30 +471,34 @@ void apply(QApplication &app) {
         }
     }
 
-    const QColor disabled(0x5E, 0x64, 0x6F);
-    QPalette palette;
-    palette.setColor(QPalette::Window, Window);
-    palette.setColor(QPalette::WindowText, Text);
-    palette.setColor(QPalette::Base, Surface);
-    palette.setColor(QPalette::AlternateBase, Panel);
-    palette.setColor(QPalette::Text, Text);
-    palette.setColor(QPalette::Button, Surface);
-    palette.setColor(QPalette::ButtonText, Text);
-    palette.setColor(QPalette::Highlight, Accent);
-    palette.setColor(QPalette::HighlightedText, Qt::white);
-    palette.setColor(QPalette::Link, Accent.lighter(120));
-    palette.setColor(QPalette::ToolTipBase, Surface);
-    palette.setColor(QPalette::ToolTipText, Text);
-    palette.setColor(QPalette::PlaceholderText, QColor(0x6C, 0x73, 0x80));
-    palette.setColor(QPalette::Mid, Border);
-    palette.setColor(QPalette::Dark, Window);
-    palette.setColor(QPalette::Disabled, QPalette::Text, disabled);
-    palette.setColor(QPalette::Disabled, QPalette::ButtonText, disabled);
-    palette.setColor(QPalette::Disabled, QPalette::WindowText, disabled);
-    QApplication::setPalette(palette);
+    const QSettings settings;
+    const QString id = settings.value(QStringLiteral("appearance/theme")).toString();
+    for (int i = 0; i < themes().size(); ++i) {
+        if (themes().at(i).id == id) g_current = i;
+    }
+    g_glow = settings.value(QStringLiteral("appearance/glow"), false).toBool();
 
+    applyPalette();
     app.setStyleSheet(styleSheet());
     app.installEventFilter(new WindowDecorator(&app));
+}
+
+void setTheme(const QString &id) {
+    for (int i = 0; i < themes().size(); ++i) {
+        if (themes().at(i).id != id) continue;
+        g_current = i;
+        QSettings().setValue(QStringLiteral("appearance/theme"), id);
+        applyAll();
+        Q_EMIT notifier()->changed();
+        return;
+    }
+}
+
+void setGlow(bool on) {
+    g_glow = on;
+    QSettings().setValue(QStringLiteral("appearance/glow"), on);
+    applyAll();
+    Q_EMIT notifier()->changed();
 }
 
 QIcon icon(Glyph glyph) {
@@ -288,13 +507,13 @@ QIcon icon(Glyph glyph) {
     pixmap.fill(Qt::transparent);
     QPainter p(&pixmap);
     p.setRenderHint(QPainter::Antialiasing);
-    QPen pen(QColor(0xC9, 0xCE, 0xD6), 2.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    QPen pen(glyphColor(), 2.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
     p.setPen(pen);
     p.setBrush(Qt::NoBrush);
     const QRectF box(7, 9, 26, 22);
     auto accentPen = [&] {
         QPen a = pen;
-        a.setColor(Accent);
+        a.setColor(current().accent);
         p.setPen(a);
     };
 
@@ -323,7 +542,7 @@ QIcon icon(Glyph glyph) {
         break;
     case Glyph::Broadcast: {
         accentPen();
-        p.setBrush(Accent);
+        p.setBrush(current().accent);
         p.drawEllipse(QPointF(20, 20), 2.6, 2.6);
         p.setBrush(Qt::NoBrush);
         p.setPen(pen);

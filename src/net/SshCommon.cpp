@@ -172,12 +172,11 @@ SshConnectResult sshConnect(const SshOptions &options, const SshPrompter &prompt
         return result;
     case SSH_KNOWN_HOSTS_NOT_FOUND:
     case SSH_KNOWN_HOSTS_UNKNOWN:
-        if (!prompter.confirmOnGui(tr("The authenticity of host %1 can't be established.\n\n"
-                                      "Key fingerprint: %2\n\nTrust this host and continue?")
-                                       .arg(options.host, fingerprint))) {
-            return result;  // cancelled
-        }
+        // First connection to this host: trust it and remember its key, without
+        // a question (the user's choice). A key that changes later is still
+        // refused above.
         ssh_session_update_known_hosts(s);
+        result.newHostKey = fingerprint;
         break;
     default:
         result.error = tr("Cannot verify host key: %1").arg(lastError(s));

@@ -73,7 +73,7 @@ void DropPreview::paintEvent(QPaintEvent *) {
     p.setOpacity(opacity);
 
     const QRectF zone = m_rect.adjusted(6, 6, -6, -6);
-    const QColor accent = style::Accent;
+    const QColor accent = style::current().accent;
     QColor fill = accent;
     fill.setAlpha(46);
     QColor glow = accent;
