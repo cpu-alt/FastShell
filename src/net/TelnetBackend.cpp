@@ -8,7 +8,11 @@ TelnetBackend::TelnetBackend(QString host, int port, QObject *parent)
     m_engine = std::make_unique<telnet::Engine>([this](const QByteArray &reply) { m_socket->write(reply); });
 
     m_socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
-    connect(m_socket, &QTcpSocket::connected, this, [this] { m_engine->begin(); });
+    connect(m_socket, &QTcpSocket::connected, this, [this] {
+        // Detects a link dropped while idle (firewall, NAT, sleep) instead of hanging.
+        m_socket->setSocketOption(QAbstractSocket::KeepAliveOption, 1);
+        m_engine->begin();
+    });
     connect(m_socket, &QTcpSocket::readyRead, this, [this] { appendData(m_engine->receive(m_socket->readAll())); });
     connect(m_socket, &QTcpSocket::errorOccurred, this, [this](QAbstractSocket::SocketError error) {
         if (error == QAbstractSocket::RemoteHostClosedError) {

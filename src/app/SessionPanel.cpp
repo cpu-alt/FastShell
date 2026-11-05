@@ -223,7 +223,10 @@ void SessionPanel::rebuild() {
         item->setToolTip(0, s.program + QLatin1Char(' ') + s.arguments.join(QLatin1Char(' ')));
         item->setData(0, KindRole, SessionItem);
         item->setData(0, KeyRole, s.id);
-        item->setFlags(item->flags() & ~(Qt::ItemIsDragEnabled | Qt::ItemIsDropEnabled));
+        item->setToolTip(0, item->toolTip(0) + tr("\nDouble-click: new tab. Drag onto a terminal: open it beside."));
+        // Draggable onto a terminal (to open beside it), never into a folder:
+        // moveItems() ignores built-in shells.
+        item->setFlags((item->flags() | Qt::ItemIsDragEnabled) & ~Qt::ItemIsDropEnabled);
     }
 
     // Restore the expanded state.

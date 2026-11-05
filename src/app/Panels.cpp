@@ -2,6 +2,8 @@
 #include "app/Panels.h"
 
 #include <QAction>
+#include <QClipboard>
+#include <QGuiApplication>
 #include <QContextMenuEvent>
 #include <QDesktopServices>
 #include <QDialog>
@@ -54,6 +56,23 @@ OutlinePanel::OutlinePanel(QWidget *parent) : QWidget(parent) {
     layout->addWidget(m_list);
 
     connect(m_filter, &QLineEdit::textChanged, this, &OutlinePanel::refresh);
+    m_list->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_list, &QListWidget::customContextMenuRequested, this, [this](const QPoint &pos) {
+        QListWidgetItem *item = m_list->itemAt(pos);
+        if (!item || !m_view) return;
+        const int index = item->data(Qt::UserRole + 1).toInt();
+        QMenu menu(this);
+        menu.addAction(tr("Copy output"), this, [this, index] {
+            if (!m_view) return;
+            const QString text = m_view->commandOutput(index);
+            if (!text.isEmpty()) QGuiApplication::clipboard()->setText(text);
+        });
+        menu.addAction(tr("Copy command"), this, [item] { QGuiApplication::clipboard()->setText(item->text().mid(2)); });
+        menu.addAction(tr("Run again"), this, [this, item] {
+            if (m_view) m_view->sendText(item->text().mid(2) + QLatin1Char('\r'));
+        });
+        menu.exec(m_list->viewport()->mapToGlobal(pos));
+    });
     connect(m_list, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
         if (m_view) {
             m_view->scrollToLine(item->data(Qt::UserRole).toLongLong());
@@ -81,10 +100,13 @@ void OutlinePanel::refresh() {
     m_list->clear();
     if (!m_view) return;
     const QString filter = m_filter->text().trimmed();
-    for (const TerminalView::Command &c : m_view->commands()) {
+    const QList<TerminalView::Command> &commands = m_view->commands();
+    for (int i = 0; i < commands.size(); ++i) {
+        const TerminalView::Command &c = commands.at(i);
         if (!filter.isEmpty() && !c.text.contains(filter, Qt::CaseInsensitive)) continue;
         auto *item = new QListWidgetItem(QStringLiteral("• ") + c.text, m_list);
         item->setData(Qt::UserRole, qlonglong(c.line));
+        item->setData(Qt::UserRole + 1, i);
         item->setToolTip(tr("%1 — click to show, double-click to run again")
                              .arg(c.time.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))));
     }

@@ -124,6 +124,8 @@ void TabPage::adopt(TerminalView *view) {
     connect(view, &TerminalView::broadcastInput, this, &TabPage::fanOut);
     connect(view, &TerminalView::closeRequested, this, [this, view] { closeView(view); });
     connect(view, &TerminalView::zoomRequested, this, [this, view] { toggleZoom(view); });
+    connect(view, &TerminalView::menuRequested, this,
+            [this, view](const QPoint &pos, int command) { Q_EMIT paneMenuRequested(view, pos, command); });
 }
 
 bool TabPage::eventFilter(QObject *watched, QEvent *event) {
@@ -327,8 +329,16 @@ void TabPage::release(TerminalView *view) {
 }
 
 void TabPage::focusNeighbor(Qt::Key direction) {
+    if (TerminalView *next = neighbor(activeView(), direction)) next->setFocus();
+}
+
+void TabPage::moveActive(Qt::Key direction) {
     TerminalView *from = activeView();
-    if (!from) return;
+    if (TerminalView *to = neighbor(from, direction)) swap(from, to);  // focus stays on the moved pane
+}
+
+TerminalView *TabPage::neighbor(TerminalView *from, Qt::Key direction) const {
+    if (!from) return nullptr;
     const QRect origin(from->mapTo(this, QPoint(0, 0)), from->size());
     TerminalView *best = nullptr;
     int bestDistance = INT_MAX;
@@ -351,7 +361,7 @@ void TabPage::focusNeighbor(Qt::Key direction) {
             best = candidate;
         }
     }
-    if (best) best->setFocus();
+    return best;
 }
 
 void TabPage::updateFrames() {

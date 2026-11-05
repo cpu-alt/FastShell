@@ -1,6 +1,7 @@
 // Copyright 2026 FastShell contributors. Apache-2.0.
 #include "net/SshBackend.h"
 
+#include <algorithm>
 #include <chrono>
 #include <memory>
 
@@ -9,7 +10,11 @@
 namespace {
 
 constexpr int ReadTimeoutMs = 10;
+constexpr int IdleReadTimeoutMs = 40;
 constexpr int ReadBufferSize = 64 * 1024;
+// Idle connections are dropped by firewalls and NAT after a few minutes:
+// a keepalive keeps them open and reveals a dead link instead of a frozen tab.
+constexpr auto KeepaliveInterval = std::chrono::seconds(30);
 
 struct ChannelDeleter {
     void operator()(ssh_channel c) const {
@@ -170,6 +175,8 @@ void SshBackend::run() {
 
     std::unique_ptr<char[]> buffer(new char[ReadBufferSize]);
     ssh_channel ch = channel.get();
+    auto lastActivity = std::chrono::steady_clock::now();  // data in or out
+    auto lastKeepalive = lastActivity;
     while (!m_stop) {
         QByteArray out;
         bool resize = false;
@@ -191,7 +198,11 @@ void SshBackend::run() {
             offset += n;
         }
 
-        const int n = ssh_channel_read_timeout(ch, buffer.get(), ReadBufferSize, 0, ReadTimeoutMs);
+        // Short waits while data flows (and right after a key); after a few
+        // seconds of silence, longer ones: an idle session no longer wakes up
+        // 100 times a second, and the first key still answers within 40 ms.
+        const bool quiet = std::chrono::steady_clock::now() - lastActivity > std::chrono::seconds(3);
+        const int n = ssh_channel_read_timeout(ch, buffer.get(), ReadBufferSize, 0, quiet ? IdleReadTimeoutMs : ReadTimeoutMs);
         if (n > 0) {
             appendData(buffer.get(), n);
         } else if (n == SSH_ERROR) {
@@ -201,6 +212,16 @@ void SshBackend::run() {
         const int e = ssh_channel_read_nonblocking(ch, buffer.get(), ReadBufferSize, 1);
         if (e > 0) {
             appendData(buffer.get(), e);
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (n > 0 || e > 0 || !out.isEmpty()) {
+            lastActivity = now;
+        } else if (now - std::max(lastActivity, lastKeepalive) >= KeepaliveInterval) {
+            lastKeepalive = now;
+            if (ssh_send_ignore(s, "") == SSH_ERROR) {  // SSH_MSG_IGNORE: harmless traffic
+                Q_EMIT errorOccurred(tr("Connection lost: %1").arg(QString::fromUtf8(ssh_get_error(s))));
+                return;
+            }
         }
         if (ssh_channel_is_eof(ch) || !ssh_channel_is_open(ch)) {
             break;

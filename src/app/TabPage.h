@@ -45,6 +45,9 @@ public:
     void closeView(TerminalView *view);
     // Moves the focus to the closest pane in a direction (arrow key).
     void focusNeighbor(Qt::Key direction);
+    // Swaps the active pane with its closest neighbor in a direction.
+    void moveActive(Qt::Key direction);
+    TerminalView *neighbor(TerminalView *from, Qt::Key direction) const;
     // What is typed in one pane goes to all panes (MultiExec).
     void setBroadcast(bool on);
     bool broadcast() const { return m_broadcast; }
@@ -56,6 +59,7 @@ Q_SIGNALS:
     // Sessions dropped from the session tree. target is null for a side of
     // the whole tab.
     void sessionsDropped(TerminalView *target, const QStringList &sessionIds, Qt::Edge edge);
+    void paneMenuRequested(TerminalView *view, const QPoint &globalPos, int commandIndex);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

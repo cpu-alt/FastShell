@@ -32,7 +32,7 @@ cmake --build build                                        # doit finir sans war
 - Le benchmark de l'analyseur doit rester vers ~100 Mio/s (le test exige seulement > 20).
 - Paquets MSYS2 : gcc, cmake, ninja, qt6-base, qt6-serialport, qt6-activeqt (RDP dans les
   onglets, `FASTSHELL_HAVE_AXRDP`, lié en statique), libssh (0.12), openssl, gtest.
-- Version : `VERSION` dans `CMakeLists.txt` (1.0.2), injectée dans l'exe (`assets/fastshell.rc.in`).
+- Version : `VERSION` dans `CMakeLists.txt` (1.0.3), injectée dans l'exe (`assets/fastshell.rc.in`).
 
 ## Livrer dans `dist/`
 

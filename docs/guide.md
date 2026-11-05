@@ -83,8 +83,8 @@ Retour à la [présentation](../README.md).
 12 thèmes au choix (View → Theme, changement immédiat) : FastShell Dark (par défaut),
 FastShell Violet, FastShell Light, et des classiques de VS Code (Dracula, One Dark Pro, Monokai,
 Nord, Tokyo Night, Catppuccin Mocha, GitHub Dark et Light, Solarized Dark). Chacun colore
-l'interface et le terminal. **Glowing edges** (même menu) ajoute un fin liseré de la couleur
-d'accent sur les panneaux, onglets, menus et le panneau actif. Onglets arrondis reliés au terminal, barre d'outils à icônes (nouvelle
+l'interface et le terminal. **Contrasted edges** (même menu, désactivé par défaut) trace des contours
+neutres nets entre les panneaux, les volets et les contrôles. Onglets arrondis reliés au terminal, barre d'outils à icônes (nouvelle
 session, onglet local, bureau à distance, coupures, taper partout, puis la vue : zoom −/+, police,
 heure et numéros de ligne, panneaux Session / Filer / Outline, plein écran), menus et champs
 arrondis, barres de défilement fines, police Segoe UI Variable, et barre de titre Windows

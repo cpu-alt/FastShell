@@ -313,18 +313,22 @@ QLabel#rdpAddress { color: @muted; }
 QLabel#rdpStatus { color: @text; }
 )");
     if (g_glow) {
-        // Accent outlines ("glowing edges"), on top of the normal style.
+        // Contrasted edges: crisp 1 px neutral lines, a step lighter than the
+        // background on dark themes (darker on light ones), that separate
+        // every area and outline the controls. No colour, no glow.
         css += QStringLiteral(R"(
-QToolBar { border-bottom: 1px solid @glow; }
-QStatusBar { border-top: 1px solid @glow; }
-QMenu, QComboBox QAbstractItemView, QToolTip { border: 1px solid @glow; }
-QTabBar::tab:selected { border-top: 2px solid @accent; padding-top: 5px; }
-QDockWidget::title { border-bottom: 1px solid @glow; }
-QDockWidget > QWidget { border: 1px solid @glowSoft; border-top: none; }
-QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit { border-color: @glowSoft; }
-QPushButton:hover, QComboBox:hover, QSpinBox:hover { border-color: @accent; }
-QMainWindow::separator:hover, QSplitter::handle:hover { background: @glow; }
-QWidget#rdpCard { border: 1px solid @glow; }
+QToolBar { border-bottom: 1px solid @edge; }
+QStatusBar { border-top: 1px solid @edge; }
+QMainWindow::separator { background: @edge; width: 1px; height: 1px; }
+QSplitter::handle { background: @edge; }
+QDockWidget::title { border-bottom: 1px solid @edge; }
+QHeaderView::section { border-bottom: 1px solid @edge; }
+QTabBar::tab:selected { border: 1px solid @edge; border-bottom: none; }
+QMenu, QToolTip, QComboBox QAbstractItemView { border: 1px solid @edgeStrong; }
+QPushButton, QLineEdit, QComboBox, QSpinBox, QPlainTextEdit, QTextEdit { border-color: @edge; }
+QPushButton:hover, QComboBox:hover, QSpinBox:hover { border-color: @edgeStrong; }
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QPlainTextEdit:focus, QTextEdit:focus { border-color: @edgeStrong; }
+QWidget#rdpCard { border: 1px solid @edge; }
 )");
     }
     const ColorTheme &t = current();
@@ -334,7 +338,9 @@ QWidget#rdpCard { border: 1px solid @glow; }
         {"@accentHover", raise(t.accent, 15).name()},
         {"@borderHover", raise(t.border, 25).name()},
         {"@scrollHover", raise(t.border, 60).name()},
-        {"@glowSoft", rgba(t.accent, 70)},
+        {"@edgeStrong", raise(t.border, 70).name()},
+        {"@edge", raise(t.border, 35).name()},
+        {"@glowSoft", rgba(t.accent, 22)},
         {"@terminal", t.terminal.background.name()},
         {"@surface", t.surface.name()},
         {"@pressed", raise(t.hover, 15).name()},
@@ -346,7 +352,7 @@ QWidget#rdpCard { border: 1px solid @glow; }
         {"@panel", t.panel.name()},
         {"@hover", t.hover.name()},
         {"@muted", t.muted.name()},
-        {"@glow", rgba(t.accent, 150)},
+        {"@glow", rgba(t.accent, 200)},
         {"@text", t.text.name()},
         {"@alt", mix(t.panel, t.surface, 0.4).name()},
     };
@@ -449,7 +455,7 @@ void decorate(QWidget *window) {
     DwmSetWindowAttribute(hwnd, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof caption);
     const COLORREF captionText = RGB(t.text.red(), t.text.green(), t.text.blue());
     DwmSetWindowAttribute(hwnd, 36 /* DWMWA_TEXT_COLOR */, &captionText, sizeof captionText);
-    const QColor edge = g_glow ? t.accent : t.border;
+    const QColor edge = t.border;  // the window frame stays neutral, glow or not
     const COLORREF border = RGB(edge.red(), edge.green(), edge.blue());
     DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, &border, sizeof border);
 #else
@@ -476,7 +482,7 @@ void apply(QApplication &app) {
     for (int i = 0; i < themes().size(); ++i) {
         if (themes().at(i).id == id) g_current = i;
     }
-    g_glow = settings.value(QStringLiteral("appearance/glow"), false).toBool();
+    g_glow = settings.value(QStringLiteral("appearance/edges"), false).toBool();
 
     applyPalette();
     app.setStyleSheet(styleSheet());
@@ -496,7 +502,7 @@ void setTheme(const QString &id) {
 
 void setGlow(bool on) {
     g_glow = on;
-    QSettings().setValue(QStringLiteral("appearance/glow"), on);
+    QSettings().setValue(QStringLiteral("appearance/edges"), on);
     applyAll();
     Q_EMIT notifier()->changed();
 }

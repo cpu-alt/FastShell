@@ -36,8 +36,10 @@ public:
 protected:
     void closeEvent(QCloseEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void changeEvent(QEvent *event) override;
 
 private:
+    void refreshAfterIdle();
     void createMenus();
     void createDocks();
     void createStatusBar();
@@ -66,6 +68,11 @@ private:
     void setBroadcastCurrent(bool on);
     void dropSessions(TabPage *page, TerminalView *target, const QStringList &ids, Qt::Edge edge);
     void detachToNewTab(TerminalView *view);
+    QMenu *shellMenu(QWidget *parent);
+    void moveToTab(TerminalView *view, TabPage *target);
+    void showPaneMenu(TerminalView *view, const QPoint &globalPos, int commandIndex);
+    void copyCommandOutput(TerminalView *view, int index);
+    void saveCommandOutput(TerminalView *view, int index);
     void closeTab(int index);
     void showTabMenu(const QPoint &pos);
     void updatePanels();
@@ -108,5 +115,6 @@ private:
     QPoint m_tabPressPos{-1, -1};
     int m_tabPressIndex = -1;
     QTimer *m_tabHoverTimer = nullptr;  // hovering a tab while dragging switches to it
+    QTimer *m_statusTimer = nullptr;    // status bar refresh, paused while minimized
     int m_tabHoverIndex = -1;
 };

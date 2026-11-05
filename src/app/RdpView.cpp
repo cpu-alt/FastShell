@@ -236,7 +236,7 @@ void RdpView::connectToHost() {
     m_seenActive = false;
     m_loggedIn = false;
     axOf(m_ax)->dynamicCall("Connect()");
-    m_stateTimer.start();
+    m_stateTimer.start(500);  // fast while connecting
 #else
     openExternally();
 #endif
@@ -287,6 +287,7 @@ void RdpView::onConnected() {
 
 void RdpView::onLoginComplete() {
     m_loggedIn = true;
+    m_stateTimer.setInterval(2000);  // connected: only a drop is left to notice
     if (m_ax) {
         m_stack->setCurrentWidget(m_ax.data());
         m_ax->setFocus();

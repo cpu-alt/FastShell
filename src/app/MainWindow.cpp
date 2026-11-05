@@ -5,16 +5,23 @@
 #include <QActionGroup>
 #include <algorithm>
 #include <QApplication>
+#include <QClipboard>
 #include <QCloseEvent>
+#include <QDir>
+#include <QFileDialog>
+#include <QRegularExpression>
+#include <QSaveFile>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QDockWidget>
+#include <QDrag>
 #include <QDragEnterEvent>
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QFontDialog>
 #include <QInputDialog>
 #include <QLabel>
+#include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QSettings>
@@ -81,7 +88,58 @@ std::function<std::optional<QString>(const QString &, bool)> askIn(QPointer<QWid
     };
 }
 
+// A menu of sessions whose entries can also be dragged out of it: click opens
+// the session in a new tab, dragging it onto a terminal opens it right beside
+// (same drop zones as a session dragged from the session tree).
+class SessionDragMenu : public QMenu {
+public:
+    using QMenu::QMenu;
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override {
+        m_pressPos = event->button() == Qt::LeftButton ? event->position().toPoint() : QPoint(-1, -1);
+        m_pressed = actionAt(m_pressPos);
+        QMenu::mousePressEvent(event);
+    }
+    void mouseMoveEvent(QMouseEvent *event) override {
+        if (m_pressed && (event->buttons() & Qt::LeftButton) && m_pressPos.x() >= 0
+            && (event->position().toPoint() - m_pressPos).manhattanLength() >= QApplication::startDragDistance()) {
+            const QString id = m_pressed->data().toString();
+            const QIcon icon = m_pressed->icon();
+            m_pressed = nullptr;
+            if (!id.isEmpty()) {
+                // Close the menu (and its parents) first, then drag.
+                for (QWidget *w = this; auto *menu = qobject_cast<QMenu *>(w); w = menu->parentWidget()) menu->hide();
+                auto *drag = new QDrag(parentWidget() ? parentWidget() : this);
+                auto *mime = new QMimeData;
+                mime->setData(QLatin1String(SessionMimeType), id.toUtf8());
+                drag->setMimeData(mime);
+                drag->setPixmap(icon.pixmap(24, 24));
+                drag->exec(Qt::CopyAction | Qt::MoveAction, Qt::CopyAction);
+                return;
+            }
+        }
+        QMenu::mouseMoveEvent(event);
+    }
+
+private:
+    QPoint m_pressPos{-1, -1};
+    QAction *m_pressed = nullptr;
+};
+
 }  // namespace
+
+// The detected shells (PowerShell, cmd, WSL...), clickable and draggable.
+QMenu *MainWindow::shellMenu(QWidget *parent) {
+    auto *menu = new SessionDragMenu(parent);
+    menu->setToolTipsVisible(true);
+    for (const SessionInfo &s : m_store->detectedShells()) {
+        QAction *a = menu->addAction(icons::session(s), s.name, this, [this, s] { openSession(s); });
+        a->setData(s.id);
+        a->setToolTip(tr("Click: new tab. Drag onto a terminal: open it beside."));
+    }
+    return menu;
+}
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent), m_store(new SessionStore(this)), m_tabs(new QTabWidget(this)) {
@@ -114,11 +172,7 @@ MainWindow::MainWindow(QWidget *parent)
     plus->setAutoRaise(true);
     plus->setToolTip(tr("New local tab (Ctrl+Shift+T)"));
     plus->setPopupMode(QToolButton::MenuButtonPopup);
-    auto *shellMenu = new QMenu(plus);
-    for (const SessionInfo &s : m_store->detectedShells()) {
-        shellMenu->addAction(icons::session(s), s.name, this, [this, s] { openSession(s); });
-    }
-    plus->setMenu(shellMenu);
+    plus->setMenu(shellMenu(plus));
     m_tabs->setCornerWidget(plus, Qt::TopRightCorner);
     connect(plus, &QToolButton::clicked, this, &MainWindow::newLocalTab);
 
@@ -218,10 +272,9 @@ void MainWindow::createMenus() {
     add(session, tr("New local tab"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_T), [this] { newLocalTab(); });
     add(session, tr("New remote desktop..."), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R),
         [this] { m_sessionPanel->newSession(QString(), SessionInfo::Type::Rdp); });
-    QMenu *shells = session->addMenu(tr("New shell"));
-    for (const SessionInfo &s : m_store->detectedShells()) {
-        shells->addAction(icons::session(s), s.name, this, [this, s] { openSession(s); });
-    }
+    QMenu *shells = shellMenu(session);
+    shells->setTitle(tr("New shell"));
+    session->addMenu(shells);
     add(session, tr("Manage users..."), QKeySequence(), [this] { UsersDialog(m_store, this).exec(); });
     add(session, tr("Manage device profiles..."), QKeySequence(), [this] { ProfilesDialog(m_store, this).exec(); });
     session->addSeparator();
@@ -248,6 +301,13 @@ void MainWindow::createMenus() {
         if (TerminalView *v = current()) v->paste();
     });
     edit->addSeparator();
+    add(edit, tr("Copy last command output"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A), [this] {
+        if (TerminalView *v = current()) copyCommandOutput(v, -1);
+    });
+    add(edit, tr("Save last command output..."), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S), [this] {
+        if (TerminalView *v = current()) saveCommandOutput(v, -1);
+    });
+    edit->addSeparator();
     QAction *confirmPaste = edit->addAction(tr("Confirm before pasting several lines"));
     confirmPaste->setCheckable(true);
     connect(edit, &QMenu::aboutToShow, confirmPaste, [confirmPaste] {
@@ -255,6 +315,16 @@ void MainWindow::createMenus() {
     });
     connect(confirmPaste, &QAction::triggered, this, [](bool on) {
         QSettings().setValue(QStringLiteral("terminal/confirmMultiLinePaste"), on);
+    });
+    QAction *autoMore = edit->addAction(tr("Skip --More-- automatically"));
+    autoMore->setCheckable(true);
+    autoMore->setToolTip(tr("Long outputs (show running-config...) scroll by whole, without pressing Space"));
+    connect(edit, &QMenu::aboutToShow, autoMore, [autoMore] {
+        autoMore->setChecked(QSettings().value(QStringLiteral("terminal/autoMore"), true).toBool());
+    });
+    connect(autoMore, &QAction::triggered, this, [this](bool on) {
+        QSettings().setValue(QStringLiteral("terminal/autoMore"), on);
+        for (TerminalView *v : allViews()) v->setAutoMore(on);
     });
 
     QMenu *window = menuBar()->addMenu(tr("&Window"));
@@ -276,6 +346,21 @@ void MainWindow::createMenus() {
             }
         });
     }
+    window->addSeparator();
+    // Same arrows with Shift: the pane itself moves (swaps with its neighbor).
+    const std::pair<const char *, Qt::Key> swaps[] = {
+        {"Move pane left", Qt::Key_Left}, {"Move pane right", Qt::Key_Right},
+        {"Move pane up", Qt::Key_Up}, {"Move pane down", Qt::Key_Down}};
+    for (const auto &[label, key] : swaps) {
+        add(window, tr(label), QKeySequence(Qt::CTRL | Qt::ALT | Qt::SHIFT | key), [this, key] {
+            if (TerminalView *v = current()) {
+                if (TabPage *page = pageOf(v)) page->moveActive(key);
+            }
+        });
+    }
+    add(window, tr("Move pane to a new tab"), QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_N), [this] {
+        if (TerminalView *v = current()) detachToNewTab(v);
+    });
 
     QMenu *view = menuBar()->addMenu(tr("&View"));
     auto zoom = [this](int delta) {
@@ -368,11 +453,7 @@ void MainWindow::createToolBar() {
     };
     action(style::Glyph::NewSession, tr("New session (Ctrl+Shift+N)"), [this] { m_sessionPanel->newSession(); });
     QAction *local = action(style::Glyph::Terminal, tr("New local tab (Ctrl+Shift+T)"), [this] { newLocalTab(); });
-    auto *shellMenu = new QMenu(this);
-    for (const SessionInfo &s : m_store->detectedShells()) {
-        shellMenu->addAction(icons::session(s), s.name, this, [this, s] { openSession(s); });
-    }
-    local->setMenu(shellMenu);
+    local->setMenu(shellMenu(this));
     if (auto *button = qobject_cast<QToolButton *>(bar->widgetForAction(local))) {
         button->setPopupMode(QToolButton::MenuButtonPopup);
     }
@@ -440,10 +521,35 @@ void MainWindow::createStatusBar() {
         label->setContentsMargins(10, 0, 10, 0);
         statusBar()->addPermanentWidget(label);
     }
-    auto *timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, &MainWindow::updateStatus);
-    timer->start(500);
+    m_statusTimer = new QTimer(this);
+    m_statusTimer->setInterval(1000);
+    connect(m_statusTimer, &QTimer::timeout, this, &MainWindow::updateStatus);
+    m_statusTimer->start();
     updateStatus();
+}
+
+// Minimized for hours: nothing on screen to refresh, so the status bar stops.
+// Back on screen (or reactivated): everything is refreshed at once.
+void MainWindow::changeEvent(QEvent *event) {
+    QMainWindow::changeEvent(event);
+    if (!m_statusTimer) return;
+    if (event->type() == QEvent::WindowStateChange) {
+        if (isMinimized()) {
+            m_statusTimer->stop();
+        } else if (!m_statusTimer->isActive()) {
+            m_statusTimer->start();
+            refreshAfterIdle();
+        }
+    } else if (event->type() == QEvent::ActivationChange && isActiveWindow()) {
+        refreshAfterIdle();
+    }
+}
+
+void MainWindow::refreshAfterIdle() {
+    updateStatus();
+    for (TerminalView *view : allViews()) {
+        if (view->isVisible()) view->update();
+    }
 }
 
 void MainWindow::updateStatus() {
@@ -513,6 +619,7 @@ QList<TerminalView *> MainWindow::allViews() const {
 }
 
 void MainWindow::applyViewOptions(TerminalView *view) {
+    view->setAutoMore(QSettings().value(QStringLiteral("terminal/autoMore"), true).toBool());
     const QString font = QSettings().value(QStringLiteral("view/font")).toString();
     QFont f;
     if (!font.isEmpty() && f.fromString(font)) {
@@ -659,6 +766,7 @@ void MainWindow::addPage(TabPage *page, const SessionInfo &first, bool startView
             [this, page](TerminalView *target, const QStringList &ids, Qt::Edge edge) {
                 dropSessions(page, target, ids, edge);
             });
+    connect(page, &TabPage::paneMenuRequested, this, &MainWindow::showPaneMenu);
     const int index = m_tabs->addTab(page, icons::session(first), first.name);
     addCloseButton(page);
     m_tabs->setCurrentIndex(index);
@@ -910,6 +1018,125 @@ void MainWindow::detachToNewTab(TerminalView *view) {
     addPage(new TabPage(view), m_sessions.value(view), false);  // keeps running
 }
 
+// A pane joins another tab, on its right side. Its old tab closes if empty.
+void MainWindow::moveToTab(TerminalView *view, TabPage *target) {
+    TabPage *from = pageOf(view);
+    if (!from || !target || from == target) return;
+    from->release(view);
+    if (m_tabs->indexOf(from) >= 0) refreshTabTitle(from);
+    target->place(view, nullptr, Qt::RightEdge);
+    m_tabs->setCurrentWidget(target);
+    refreshTabTitle(target);
+}
+
+void MainWindow::copyCommandOutput(TerminalView *view, int index) {
+    const QString text = view->commandOutput(index);
+    if (text.isEmpty()) {
+        statusBar()->showMessage(tr("No command output to copy"), 3000);
+        return;
+    }
+    QGuiApplication::clipboard()->setText(text);
+    statusBar()->showMessage(tr("Output copied: %n line(s)", nullptr, int(text.count(QLatin1Char('\n')) + 1)), 4000);
+}
+
+void MainWindow::saveCommandOutput(TerminalView *view, int index) {
+    const QString text = view->commandOutput(index);
+    if (text.isEmpty()) {
+        statusBar()->showMessage(tr("No command output to save"), 3000);
+        return;
+    }
+    // Suggested name: session and command, e.g. "A41-SW-01 show running-config.txt".
+    const QList<TerminalView::Command> &commands = view->commands();
+    const QString command = commands.value(index < 0 ? commands.size() - 1 : index).text;
+    QString name = view->paneTitle().isEmpty() ? view->title() : view->paneTitle();
+    name = (name + QLatin1Char(' ') + command).simplified();
+    name.replace(QRegularExpression(QStringLiteral(R"([\\/:*?"<>|])")), QStringLiteral("_"));
+    const QString dir = QSettings().value(QStringLiteral("output/lastDir"), QDir::homePath()).toString();
+    const QString file = QFileDialog::getSaveFileName(this, tr("Save command output"), QDir(dir).filePath(name.left(120) + QStringLiteral(".txt")),
+                                                      tr("Text files (*.txt);;All files (*)"));
+    if (file.isEmpty()) return;
+    QSaveFile out(file);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Text) || out.write((text + QLatin1Char('\n')).toUtf8()) < 0 || !out.commit()) {
+        QMessageBox::warning(this, tr("Save command output"), tr("Cannot write %1.").arg(QDir::toNativeSeparators(file)));
+        return;
+    }
+    QSettings().setValue(QStringLiteral("output/lastDir"), QFileInfo(file).absolutePath());
+    statusBar()->showMessage(tr("Output saved to %1").arg(QDir::toNativeSeparators(file)), 5000);
+}
+
+// Right click on a pane's title bar, or Shift+right click in a terminal.
+void MainWindow::showPaneMenu(TerminalView *view, const QPoint &globalPos, int commandIndex) {
+    TabPage *page = pageOf(view);
+    if (!page) return;
+    QMenu menu(this);
+
+    // Command output: the one under the mouse, the last one, or any recent one.
+    const QList<TerminalView::Command> &commands = view->commands();
+    auto shortText = [](const QString &command) {
+        return command.size() > 40 ? command.left(39) + QStringLiteral("…") : command;
+    };
+    if (commandIndex >= 0) {
+        const QString c = shortText(commands.at(commandIndex).text);
+        menu.addAction(tr("Copy output of \"%1\"").arg(c), this, [this, view, commandIndex] { copyCommandOutput(view, commandIndex); });
+        menu.addAction(tr("Save output of \"%1\"...").arg(c), this, [this, view, commandIndex] { saveCommandOutput(view, commandIndex); });
+    }
+    QAction *last = menu.addAction(tr("Copy last command output"), this, [this, view] { copyCommandOutput(view, -1); });
+    last->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A));
+    last->setEnabled(!commands.isEmpty());
+    if (commands.size() > 1) {
+        QMenu *recent = menu.addMenu(tr("Copy output of"));
+        for (int i = int(commands.size()) - 1; i >= std::max(0, int(commands.size()) - 15); --i) {
+            recent->addAction(shortText(commands.at(i).text), this, [this, view, i] { copyCommandOutput(view, i); });
+        }
+    }
+    QAction *more = menu.addAction(tr("Skip --More-- automatically (this pane)"));
+    more->setCheckable(true);
+    more->setChecked(view->autoMore());
+    connect(more, &QAction::toggled, view, &TerminalView::setAutoMore);
+    menu.addSeparator();
+    QAction *copy = menu.addAction(tr("Copy selection"), view, &TerminalView::copySelection);
+    copy->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_C));
+    menu.addAction(tr("Paste"), view, &TerminalView::paste)->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_V));
+    menu.addSeparator();
+
+    // Placement.
+    menu.addAction(tr("Split right"), this, [this, view] { view->setFocus(); splitCurrent(Qt::Horizontal); });
+    menu.addAction(tr("Split down"), this, [this, view] { view->setFocus(); splitCurrent(Qt::Vertical); });
+    if (page->count() > 1) {
+        QMenu *move = menu.addMenu(tr("Move pane"));
+        const std::pair<QString, Qt::Key> directions[] = {
+            {tr("Left"), Qt::Key_Left}, {tr("Right"), Qt::Key_Right}, {tr("Up"), Qt::Key_Up}, {tr("Down"), Qt::Key_Down}};
+        for (const auto &[label, key] : directions) {
+            QAction *a = move->addAction(label, this, [page, view, key] { view->setFocus(); page->moveActive(key); });
+            a->setShortcut(QKeySequence(Qt::CTRL | Qt::ALT | Qt::SHIFT | key));
+            a->setEnabled(page->neighbor(view, key) != nullptr);
+        }
+        QMenu *swapWith = menu.addMenu(tr("Swap with"));
+        for (TerminalView *other : page->views()) {
+            if (other == view) continue;
+            const QString name = other->paneTitle().isEmpty() ? other->title() : other->paneTitle();
+            swapWith->addAction(name, this, [page, view, other] { page->swap(view, other); });
+        }
+        menu.addAction(tr("Move to a new tab"), this, [this, view] { detachToNewTab(view); })
+            ->setShortcut(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_N));
+    }
+    if (m_tabs->count() > 1) {
+        QMenu *toTab = menu.addMenu(tr("Move to tab"));
+        for (int i = 0; i < m_tabs->count(); ++i) {
+            TabPage *target = pageAt(i);
+            if (!target || target == page) continue;
+            toTab->addAction(m_tabs->tabText(i), this, [this, view, target] { moveToTab(view, target); });
+        }
+        if (toTab->isEmpty()) toTab->menuAction()->setVisible(false);
+    }
+    if (page->count() > 1) {
+        menu.addAction(tr("Zoom pane"), this, [page, view] { page->toggleZoom(view); });
+        menu.addSeparator();
+        menu.addAction(tr("Close pane"), this, [page, view] { page->closeView(view); });
+    }
+    menu.exec(globalPos);
+}
+
 // The tab bar: a tab dragged down out of the bar becomes a pane drag (drop it
 // on a terminal to show both side by side), and while a pane or a session is
 // dragged, resting on a tab switches to it.
@@ -998,7 +1225,7 @@ bool MainWindow::tabBarDragEvent(QEvent *event) {
     }
 }
 
-// View > Theme: the colour themes, switched live, and the glowing edges.
+// View > Theme: the colour themes, switched live, and the contrasted edges.
 void MainWindow::createThemeMenu(QMenu *view) {
     QMenu *menu = view->addMenu(tr("Theme"));
     auto *group = new QActionGroup(menu);
@@ -1015,8 +1242,8 @@ void MainWindow::createThemeMenu(QMenu *view) {
         connect(a, &QAction::triggered, this, [id] { style::setTheme(id); });
     }
     menu->addSeparator();
-    QAction *glow = menu->addAction(tr("Glowing edges"));
-    glow->setToolTip(tr("Thin accent outlines on panels, tabs, menus and the active pane"));
+    QAction *glow = menu->addAction(tr("Contrasted edges"));
+    glow->setToolTip(tr("Crisp outlines between panels, panes and controls"));
     glow->setCheckable(true);
     glow->setChecked(style::glow());
     connect(glow, &QAction::toggled, this, [](bool on) { style::setGlow(on); });

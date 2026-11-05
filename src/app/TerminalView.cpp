@@ -171,7 +171,11 @@ void TerminalView::onReadyRead() {
         Q_EMIT connected();
     }
     const bool idle = m_pending.isEmpty();
-    m_pending += m_backend->readAll();
+    if (idle) {
+        m_pending = m_backend->readAll();  // usual case: no copy
+    } else {
+        m_pending += m_backend->readAll();
+    }
     if (idle) {
         processPending();
     }
@@ -182,9 +186,16 @@ void TerminalView::processPending() {
         return;
     }
     const std::int64_t viewTop = m_screen->screenTopLine() - m_scrollOffset;
-    const qsizetype length = std::min(m_pending.size(), ParseSliceBytes);
-    m_screen->feed(m_pending.constData(), std::size_t(length));
-    m_pending.remove(0, length);
+    // Slices are taken by moving an offset: removing them from the front would
+    // copy the whole backlog each time, which froze the window when it came
+    // back after hours of output in the background.
+    const qsizetype length = std::min(m_pending.size() - m_pendingOffset, ParseSliceBytes);
+    m_screen->feed(m_pending.constData() + m_pendingOffset, std::size_t(length));
+    m_pendingOffset += length;
+    if (m_pendingOffset >= m_pending.size()) {
+        m_pending.clear();
+        m_pendingOffset = 0;
+    }
 
     // If the user scrolled back, keep the same text in view while output continues.
     if (m_scrollOffset > 0) {
@@ -195,7 +206,29 @@ void TerminalView::processPending() {
 
     if (!m_pending.isEmpty()) {
         QTimer::singleShot(0, this, &TerminalView::processPending);  // let input and painting run
+    } else if (m_autoMore) {
+        answerPager();
     }
+}
+
+// Auto --More--: when the output stops on a pager prompt (a "show run" on a
+// switch), send a space for the next page, so the whole output scrolls by
+// without pressing Space again and again.
+void TerminalView::answerPager() {
+    if (m_finished || m_screen->altScreen()) return;  // never inside less, vim...
+    const std::int64_t line = m_screen->screenTopLine() + m_screen->cursorRow();
+    const int column = m_screen->cursorColumn();
+    if (column <= 0 || column > 60) return;
+    const QString text = toQString(m_screen->text(line, 0, line, column - 1)).trimmed();
+    // Cisco/FS "--More--", " --More-- ", Huawei "---- More ----", "<--- More --->",
+    // "-- More --" (with or without a percentage).
+    static const QRegularExpression pager(QStringLiteral(R"(^<?-{2,}\s*\(?More\b[^-]*-{2,}>?$)"),
+                                          QRegularExpression::CaseInsensitiveOption);
+    if (!pager.match(text).hasMatch()) return;
+    if (m_pagerLine == line && m_pagerRevision == m_screen->revision()) return;  // already answered
+    m_pagerLine = line;
+    m_pagerRevision = m_screen->revision();
+    send(" ");
 }
 
 // --- geometry & scrolling -----------------------------------------------------------
@@ -311,6 +344,57 @@ void TerminalView::captureCommand(std::int64_t line) {
         m_commands.removeFirst();
     }
     Q_EMIT commandsChanged();
+}
+
+QString TerminalView::commandOutput(int index) const {
+    if (m_commands.isEmpty()) return {};
+    if (index < 0) index = int(m_commands.size()) - 1;
+    if (index >= m_commands.size()) return {};
+
+    // From the line after the command (and its wrapped continuation)...
+    std::int64_t from = m_commands.at(index).line;
+    while (const Line *l = m_screen->line(from)) {
+        ++from;
+        if (!l->wrapped) break;
+    }
+    // ...to the next command's prompt line, or the prompt the cursor is on.
+    const std::int64_t to = index + 1 < m_commands.size() ? m_commands.at(index + 1).line
+                                                          : m_screen->screenTopLine() + m_screen->cursorRow();
+    from = std::max(from, m_screen->firstLine());
+    if (to <= from) return {};
+
+    // Pager prompts left on screen: Cisco/FS "--More--", Huawei "---- More ----",
+    // and the blanks some devices write over them.
+    static const QRegularExpression pager(QStringLiteral(R"(\s*<?-{2,}\s*\(?More\)?[^-]*-{2,}>?\s*)"),
+                                          QRegularExpression::CaseInsensitiveOption);
+    QStringList lines;
+    QString current;
+    for (std::int64_t l = from; l < to; ++l) {
+        const Line *line = m_screen->line(l);
+        if (!line) continue;
+        current += toQString(m_screen->text(l, 0, l, m_screen->columns() - 1));
+        if (line->wrapped && l + 1 < to) continue;  // one logical line
+        QString text = current;
+        current.clear();
+        if (text.contains(QLatin1String("More"), Qt::CaseInsensitive)) {
+            text.replace(pager, QString());
+            if (text.trimmed().isEmpty()) continue;  // a line that was only the pager prompt
+        }
+        while (!text.isEmpty() && text.back().isSpace()) text.chop(1);
+        lines << text;
+    }
+    while (!lines.isEmpty() && lines.first().isEmpty()) lines.removeFirst();
+    while (!lines.isEmpty() && lines.last().isEmpty()) lines.removeLast();
+    return lines.join(QLatin1Char('\n'));
+}
+
+int TerminalView::commandAt(const QPointF &point) const {
+    if (m_commands.isEmpty() || m_screen->altScreen()) return -1;
+    const std::int64_t line = positionAt(point).line;
+    auto it = std::upper_bound(m_commands.begin(), m_commands.end(), line,
+                               [](std::int64_t l, const Command &c) { return l < c.line; });
+    if (it == m_commands.begin()) return -1;  // above the first command
+    return int(std::distance(m_commands.begin(), it)) - 1;
 }
 
 void TerminalView::zoom(int delta) {
@@ -579,16 +663,11 @@ void TerminalView::paintEvent(QPaintEvent *) {
         painter.setPen(QPen(QColor(0xFF, 0x9F, 0x1C), 2));
         painter.setBrush(Qt::NoBrush);
         painter.drawRect(QRectF(1, 1, width() - m_scrollBar->width() - 2, height() - 2));
-    } else if (m_activeFrame && !m_headerVisible) {
-        painter.fillRect(QRectF(0, 0, width() - m_scrollBar->width(), 2), m_theme.cursor);
-    }
-    if (style::glow() && m_activeFrame && !m_broadcast) {
-        // Glowing edges: a thin accent outline around the active pane.
-        QColor edge = style::current().accent;
-        edge.setAlpha(170);
-        painter.setPen(QPen(edge, 1));
-        painter.setBrush(Qt::NoBrush);
-        painter.drawRect(QRectF(0.5, 0.5, width() - m_scrollBar->width() - 1, height() - 1));
+    } else {
+        if (style::glow()) paintEdge(painter);
+        if (m_activeFrame && !m_headerVisible) {
+            painter.fillRect(QRectF(0, 0, width() - m_scrollBar->width(), 2), m_theme.cursor);
+        }
     }
     if (m_headerVisible) {
         paintHeader(painter);
@@ -786,6 +865,11 @@ static int buttonCode(Qt::MouseButton button) {
 
 void TerminalView::mousePressEvent(QMouseEvent *event) {
     setFocus();
+    if (event->button() == Qt::RightButton
+        && ((m_headerVisible && event->position().y() < headerHeight()) || (event->modifiers() & Qt::ShiftModifier))) {
+        Q_EMIT menuRequested(event->globalPosition().toPoint(), commandAt(event->position()));
+        return;
+    }
     if (m_headerVisible && event->position().y() < headerHeight()) {
         if (event->button() == Qt::LeftButton) {
             if (m_closeRect.contains(event->position().toPoint())) Q_EMIT closeRequested();
@@ -949,6 +1033,16 @@ void TerminalView::setHeaderVisible(bool visible) {
 void TerminalView::setZoomed(bool zoomed) {
     m_zoomed = zoomed;
     update();
+}
+
+// Contrasted edges: a crisp neutral 1 px outline around the pane, the same
+// line as the rest of the window (a step away from the background).
+void TerminalView::paintEdge(QPainter &p) {
+    const style::ColorTheme &ui = style::current();
+    const QColor edge = ui.dark ? ui.border.lighter(135) : ui.border.darker(117);
+    p.setPen(QPen(edge, 1));
+    p.setBrush(Qt::NoBrush);
+    p.drawRect(QRectF(0.5, 0.5, width() - m_scrollBar->width() - 1, height() - 1));
 }
 
 void TerminalView::paintHeader(QPainter &p) {

@@ -51,6 +51,13 @@ public:
         QDateTime time;
     };
     const QList<Command> &commands() const { return m_commands; }
+    // What a command printed (a whole "show running-config"...), from the line
+    // after it to the next prompt, with pager prompts ("--More--") removed.
+    // index -1 = the last command. Empty if there is none.
+    QString commandOutput(int index = -1) const;
+    // Index of the command whose output (or command line) shows at a point
+    // of the widget, or -1.
+    int commandAt(const QPointF &point) const;
     void scrollToLine(std::int64_t line);
     void sendText(const QString &text);  // as if typed
     QPoint cursorPosition() const { return {m_screen->cursorColumn() + 1, int(m_screen->cursorRow() + 1)}; }
@@ -59,6 +66,9 @@ public:
     void setShowTimestamps(bool show);
     void setShowLineNumbers(bool show);
     void setBackspaceSendsCtrlH(bool on) { m_backspaceCtrlH = on; }
+    // Answers pager prompts (--More--) with a space, so long outputs come whole.
+    void setAutoMore(bool on) { m_autoMore = on; }
+    bool autoMore() const { return m_autoMore; }
     // Broadcast mode: typed input is emitted instead of sent (TabPage fans it out).
     void setBroadcast(bool on) {
         m_broadcast = on;
@@ -94,6 +104,9 @@ Q_SIGNALS:
     void broadcastInput(const QByteArray &data);
     void closeRequested();
     void zoomRequested();
+    // Right click on the title bar, or Shift+right click in the terminal
+    // (a plain right click pastes). Global position.
+    void menuRequested(const QPoint &globalPos, int commandIndex);
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -140,6 +153,7 @@ private:
     qreal textLeft() const { return m_padding + m_gutterWidth; }
     qreal textTop() const { return m_padding + headerHeight(); }
     void paintHeader(QPainter &painter);
+    void paintEdge(QPainter &painter);
 
     BackendFactory m_factory;
     QPointer<Backend> m_backend;
@@ -155,7 +169,8 @@ private:
     qreal m_ascent = 12;
     int m_padding = 4;
 
-    QByteArray m_pending;      // received but not parsed yet
+    QByteArray m_pending;      // received but not parsed yet (from m_pendingOffset)
+    qsizetype m_pendingOffset = 0;  // parsed part of m_pending, dropped once all is parsed
     QTimer m_renderTimer;      // coalesces repaints to the display rate
     QTimer m_resizeTimer;      // debounces size changes sent to the backend
     std::uint64_t m_paintedRevision = ~0ull;
@@ -179,6 +194,10 @@ private:
     bool m_receivedData = false;
     bool m_activeFrame = false;
     bool m_backspaceCtrlH = false;
+    bool m_autoMore = true;
+    std::int64_t m_pagerLine = -1;       // pager prompt already answered...
+    std::uint64_t m_pagerRevision = 0;   // ...at this screen state
+    void answerPager();
     bool m_broadcast = false;
     bool m_headerVisible = false;
     bool m_zoomed = false;
