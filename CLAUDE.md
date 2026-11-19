@@ -32,7 +32,7 @@ cmake --build build                                        # doit finir sans war
 - Le benchmark de l'analyseur doit rester vers ~100 Mio/s (le test exige seulement > 20).
 - Paquets MSYS2 : gcc, cmake, ninja, qt6-base, qt6-serialport, qt6-activeqt (RDP dans les
   onglets, `FASTSHELL_HAVE_AXRDP`, lié en statique), libssh (0.12), openssl, gtest.
-- Version : `VERSION` dans `CMakeLists.txt` (1.0.3), injectée dans l'exe (`assets/fastshell.rc.in`).
+- Version : `VERSION` dans `CMakeLists.txt` (1.0.4), injectée dans l'exe (`assets/fastshell.rc.in`).
 
 ## Livrer dans `dist/`
 
@@ -68,8 +68,11 @@ src/net/       SshCommon (connexion+auth partagées), SshBackend, SftpClient, Te
 src/widgets/   ScrollBar, Splitter, PopupWidget
 src/app/       MainWindow, TabPage, TerminalView, SessionStore (JSON + DPAPI, import/export),
                SessionPanel, SessionDialog, ManageDialogs, FilerPanel, Panels, Logo.h, Icons.h,
+               EditorWindow (éditeur type Bloc-notes, local ou SFTP en mémoire), EditorText (testé),
                Style (QSS, icônes, chevrons générés), DropPreview, RdpView, TextSafety.h
-               (titres, collage, noms de fichiers SFTP), UpdateCheck, Updater, main.cpp
+               (titres, collage, noms de fichiers SFTP), UpdateCheck, Updater, main.cpp,
+               McpProtocol (Claude Code : outils MCP, règles mots de passe, HTTP ; testé),
+               McpServer (127.0.0.1), MainWindowClaude (menu Claude, accès par panneau)
 tests/         GoogleTest (dont test_security, test_app_security, test_update, test_ssh_login)
 tools/         package.sh (paquet de release), make_icon.cpp (assets/fastshell.ico + docs/logo.png)
 docs/          guide.md, development.md, security-audit.md, screenshot.png
@@ -100,6 +103,10 @@ Données utilisateur : `%APPDATA%\EMF NET\FastShell\sessions.json` (+ QSettings 
   « Glowing edges » (liseré d'accent). Réglages `appearance/theme` et `appearance/glow`. Utiliser
   `style::current()` au lieu de couleurs en dur.
 - **Clé d'hôte SSH** : nouvel équipement accepté sans question (clé retenue) ; clé changée refusée.
+- **Claude Code** (menu Claude) : serveur MCP HTTP sur 127.0.0.1:47821, désactivé par défaut,
+  clé Bearer, accès par panneau (Hidden / Read only / Ask / Full), jamais d'envoi pendant une
+  invite de mot de passe, secrets masqués. Tester avec sa propre instance portable
+  (`claude/port` différent dans le `.ini`) et `curl` ou `claude -p --mcp-config`.
 - **RDP** : déplaçable dans un panneau (clic droit sur l'onglet → Move to a panel).
 - **Logo** : hexagone en tuile 3D avec `>` et curseur. Après modification de `Logo.h`, relancer
   `tools/make_icon assets/fastshell.ico docs/logo.png`.

@@ -5,6 +5,7 @@
 #include <QMainWindow>
 #include <QPointer>
 
+#include "app/McpProtocol.h"
 #include "app/SessionStore.h"
 
 class FilerPanel;
@@ -23,7 +24,9 @@ class TerminalView;
 class TransferPanel;
 class Updater;
 
-class MainWindow : public QMainWindow {
+class McpServer;
+
+class MainWindow : public QMainWindow, private mcp::Host {
     Q_OBJECT
 
 public:
@@ -79,6 +82,31 @@ private:
     void updateStatus();
     SftpClient *sftpFor(TerminalView *view);
     void applyViewOptions(TerminalView *view);
+
+    // Claude Code bridge (MainWindowClaude.cpp): an MCP server on 127.0.0.1,
+    // off until the user turns it on, with an access level per pane.
+    void createClaude();
+    void setClaudeEnabled(bool on);
+    void showClaudeConnection();
+    void addClaudeAccessMenu(QMenu *menu, TerminalView *view);
+    void updateClaudeIndicator();
+    mcp::Access claudeAccess(TerminalView *view) const;
+    int claudeId(TerminalView *view) const;
+    TerminalView *claudeView(int id) const;
+    QList<mcp::SessionInfo> sessions() const override;
+    bool text(int id, std::int64_t from, int maxLines, mcp::Text &out) const override;
+    bool send(int id, const QByteArray &data) override;
+    void approve(int id, const QString &what, std::function<void(bool)> done) override;
+    void activity() override;
+    void attention(int id, const QString &message) override;
+    QList<mcp::SavedSession> savedSessions() const override;
+    void openSaved(const QString &name, std::function<void(int, const QString &)> done) override;
+    QAction *m_claudeOpenAction = nullptr;
+    McpServer *m_mcp = nullptr;
+    QAction *m_claudeAction = nullptr;
+    QLabel *m_statusClaude = nullptr;
+    qint64 m_claudeLastActivity = 0;
+    mutable int m_claudeNextId = 0;
 
     SessionStore *m_store;
     QTabWidget *m_tabs;

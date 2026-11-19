@@ -32,6 +32,7 @@
 #include <QToolBar>
 #include <QToolButton>
 
+#include "app/EditorWindow.h"
 #include "app/FilerPanel.h"
 #include "app/Icons.h"
 #include "app/Logo.h"
@@ -202,6 +203,7 @@ MainWindow::MainWindow(QWidget *parent)
     createMenus();
     createToolBar();
     createStatusBar();
+    createClaude();
 
     // A window saved before the panels existed would be too small for them.
     const bool hasLayout = settings.contains(QStringLiteral("window/state"));
@@ -278,6 +280,25 @@ void MainWindow::createMenus() {
     add(session, tr("Manage users..."), QKeySequence(), [this] { UsersDialog(m_store, this).exec(); });
     add(session, tr("Manage device profiles..."), QKeySequence(), [this] { ProfilesDialog(m_store, this).exec(); });
     session->addSeparator();
+    // Built-in editor: on the server of the current SSH tab, else a local file.
+    add(session, tr("Edit a file..."), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F), [this] {
+        TerminalView *v = current();
+        if (v && qobject_cast<SshBackend *>(v->backend())) {
+            SftpClient *client = sftpFor(v);
+            if (!client) {
+                QMessageBox::information(this, tr("Edit a file"), tr("Log in to the server first."));
+                return;
+            }
+            bool ok = false;
+            const QString path = QInputDialog::getText(this, tr("Edit a file on %1").arg(client->host()),
+                                                       tr("Path on the server:"), QLineEdit::Normal,
+                                                       QStringLiteral("/etc/"), &ok).trimmed();
+            if (ok && !path.isEmpty()) EditorWindow::openRemote(client, path, this);
+            return;
+        }
+        const QString path = QFileDialog::getOpenFileName(this, tr("Edit a file"));
+        if (!path.isEmpty()) EditorWindow::openLocal(path, this);
+    });
     add(session, tr("Duplicate tab"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D), [this] {
         if (TerminalView *v = current()) openSession(m_sessions.value(v));
     });
@@ -922,6 +943,10 @@ void MainWindow::showTabMenu(const QPoint &pos) {
         connect(backspace, &QAction::toggled, view, &TerminalView::setBackspaceSendsCtrlH);
         menu.addSeparator();
     }
+    if (m_claudeAction && m_claudeAction->isChecked()) {
+        addClaudeAccessMenu(&menu, view);
+        menu.addSeparator();
+    }
     menu.addAction(tr("Split right"), this, [this] { splitCurrent(Qt::Horizontal); });
     menu.addAction(tr("Split down"), this, [this] { splitCurrent(Qt::Vertical); });
     menu.addSeparator();
@@ -1093,6 +1118,7 @@ void MainWindow::showPaneMenu(TerminalView *view, const QPoint &globalPos, int c
     more->setCheckable(true);
     more->setChecked(view->autoMore());
     connect(more, &QAction::toggled, view, &TerminalView::setAutoMore);
+    addClaudeAccessMenu(&menu, view);
     menu.addSeparator();
     QAction *copy = menu.addAction(tr("Copy selection"), view, &TerminalView::copySelection);
     copy->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_C));

@@ -9,6 +9,7 @@
 #include <QSettings>
 #include <QStandardPaths>
 
+#include "app/EditorWindow.h"
 #include "app/Logo.h"
 #include "app/MainWindow.h"
 #include "app/Style.h"
@@ -91,6 +92,10 @@ int main(int argc, char *argv[]) {
                                      QStringLiteral("Portable mode: keep sessions and settings in this folder."),
                                      QStringLiteral("folder"));
     parser.addOption(dataDir);
+    const QCommandLineOption editFile(QStringLiteral("edit"),
+                                      QStringLiteral("Open a local file in the built-in editor."),
+                                      QStringLiteral("file"));
+    parser.addOption(editFile);
     parser.addPositionalArgument(QStringLiteral("targets"),
                                  QStringLiteral("user@host[:port], telnet host, rdp host, \"COM3 115200\" or local"));
     parser.process(app);
@@ -120,6 +125,12 @@ int main(int argc, char *argv[]) {
         } else if (auto s = SessionStore::parseQuickConnect(arg)) {
             targets << *s;
         }
+    }
+
+    if (parser.isSet(editFile) && targets.isEmpty()) {
+        // Editor alone (e.g. "Open with" from Explorer); quits when it closes.
+        EditorWindow::openLocal(QDir(parser.value(editFile)).absolutePath());
+        return app.exec();
     }
 
     MainWindow window;

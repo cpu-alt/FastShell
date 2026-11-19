@@ -101,7 +101,22 @@ aux couleurs du thème (coins arrondis sous Windows 11).
 - **Filer** (à gauche) : explorateur de fichiers. Sur un onglet local, il montre le disque ;
   sur un onglet SSH, il montre le serveur en **SFTP** : téléchargement (double-clic), envoi
   (bouton ou glisser-déposer depuis l'Explorateur), renommer, supprimer, nouveau dossier,
-  « cd ici » dans le terminal.
+  « cd ici » dans le terminal, et **Edit** (clic droit sur un fichier) pour le modifier.
+- **Éditeur intégré** (comme le Bloc-notes) : clic droit → **Edit** dans le Filer, ou menu
+  Session → **Edit a file...** (Ctrl+Shift+F) : sur un onglet SSH connecté, on tape le chemin
+  sur le serveur (ex. `/etc/freeradius/3.0/clients.conf`) ; sur un onglet local, on choisit le
+  fichier. Souris pour placer le curseur et sélectionner, Ctrl+C / X / V et clic droit,
+  Ctrl+Z / Ctrl+Y, Ctrl+F (rechercher), F3 / Shift+F3, Ctrl+H (remplacer), Ctrl+G (aller à la
+  ligne), **Ctrl+S pour enregistrer**, Ctrl+W pour fermer (demande s'il reste des
+  modifications). Les fins de ligne (LF / CRLF) et l'encodage du fichier sont gardés tels quels.
+  Le fichier distant est lu et écrit en mémoire par SFTP, jamais copié sur le PC.
+  **Fichier protégé** (`/etc/freeradius/...`, comme avec `sudo nano`) : l'éditeur propose de
+  l'ouvrir avec **sudo** et demande le mot de passe sudo dans une fenêtre de FastShell, à
+  l'ouverture puis à chaque Ctrl+S. Le mot de passe va directement à `sudo` (jamais dans une
+  commande, l'historique ou les logs) et n'est pas gardé. L'enregistrement passe par une copie
+  privée dans le dossier perso, puis remplace le fichier d'un coup en gardant son propriétaire et
+  ses droits, et laisse l'ancienne version en `.bak` à côté (ex. `clients.conf.bak`).
+  `FastShell.exe --edit FICHIER` ouvre l'éditeur seul sur un fichier local.
 - **Transfer** (en bas) : progression des transferts SFTP, qui apparaît automatiquement.
 - **Barre de commandes rapides** (en bas) : boutons qui envoient une commande à l'onglet
   courant. Clic droit pour ajouter, modifier, déplacer ou supprimer.
@@ -143,6 +158,55 @@ aux couleurs du thème (coins arrondis sous Windows 11).
 - Historique de 20 000 lignes. Copier-coller comme MobaXterm : sélectionner copie tout de suite
   (double-clic = un mot), Ctrl+V ou clic droit colle.
 
+## Claude Code dans FastShell
+
+Claude Code peut lire les consoles ouvertes et y taper des commandes, au lieu de copier-coller
+entre les deux. C'est un serveur MCP local intégré à FastShell (HTTP sur `127.0.0.1:47821`
+seulement), **désactivé par défaut**.
+
+1. Menu **Claude → Let Claude Code use the terminals** (coché = actif, retenu au redémarrage).
+2. **Claude → Connect Claude Code…** → **Copy command**, puis coller la commande une seule fois
+   dans un terminal où Claude Code est installé :
+   `claude mcp add --transport http --scope user fastshell http://127.0.0.1:47821/mcp --header "Authorization: Bearer <clé>"`.
+   Relancer Claude Code : `/mcp` doit montrer `fastshell`. Variante par projet : copier
+   `docs/mcp.example.json` en `.mcp.json` et y mettre la clé.
+3. Demander à Claude, par exemple : « lis la console COM4 dans FastShell et configure le VLAN 20 ».
+
+Outils donnés à Claude :
+
+| Outil | Rôle |
+|---|---|
+| `list_sessions` | consoles ouvertes, avec leur accès et le prompt actuel |
+| `read_output` | dernières lignes ; `new_only` = seulement ce que Claude n'a pas encore lu |
+| `run_commands` | plusieurs commandes en **un appel et une confirmation**, arrêt à la première erreur |
+| `send_line` | une seule commande |
+| `help` | tape `commande ?`, renvoie l'aide de l'équipement puis efface la ligne (Ctrl+U) |
+| `send_keys` | touches sans Entrée (Ctrl+C, Tab, flèches…) |
+| `wait_for_user` | invite de mot de passe : FastShell montre la console, fait clignoter la barre des tâches, et Claude attend que vous ayez tapé |
+| `list_saved_sessions`, `open_session` | ouvrir une session enregistrée (FastShell se connecte avec les identifiants enregistrés ; Claude ne les voit pas) |
+
+Pour économiser les tokens, les sorties sont compactées : sans la commande répétée, sans les
+lignes `!`, sans lignes vides en série, avec le prompt une seule fois par lot, filtrables par une
+expression régulière (`filter`, comme `| include`) et coupées au milieu au-delà d'environ
+16 000 caractères. Une commande se termine dès que le prompt revient, et les `--More--` sont
+passés automatiquement. Le menu **Claude → Let Claude open saved sessions** (activé) permet
+d'interdire `open_session` ; sinon, l'ouverture est demandée sauf si les nouveaux panneaux sont
+en *Allow commands*.
+
+Sécurité :
+- **Accès par panneau** (clic droit sur l'onglet ou le titre du panneau → *Claude access*) :
+  *Hidden* (invisible), *Read only*, *Ask before each command* (par défaut : FastShell demande
+  avant chaque envoi, avec « Always for this pane ») ou *Allow commands*. Le défaut des nouveaux
+  panneaux se règle dans Claude → New panes.
+- **Mots de passe** : rien n'est envoyé pendant une invite « Password: » (sauf Ctrl+C/D/Z, Échap
+  pour en sortir) : Claude vous demande de le taper. Les valeurs après `password`, `secret`,
+  `community`, `key-string`… sont masquées (`********`) dans ce que Claude lit, et une commande
+  qui en contient une est refusée.
+- Écoute sur 127.0.0.1 uniquement, clé obligatoire (Claude → New connection key pour la changer),
+  pages web refusées (en-têtes Origin / Host). Rien n'est journalisé.
+- La barre d'état affiche « Claude: on », puis **CLAUDE CONNECTED** quand Claude a agi dans la
+  dernière minute.
+
 ## Mode portable
 
 `FastShell.exe --data-dir D:\FastShell-data` garde les sessions et les réglages dans ce dossier
@@ -166,6 +230,7 @@ couper). Relancer la commande d'installation fait aussi la mise à jour.
 | Nouvelle session (enregistrée ou non) | Ctrl+Shift+N |
 | Nouveau bureau à distance (RDP) | Ctrl+Shift+R |
 | Dupliquer l'onglet | Ctrl+Shift+D |
+| Modifier un fichier (éditeur intégré) | Ctrl+Shift+F |
 | Couper à droite / en bas | Ctrl+Shift+E / Ctrl+Shift+O |
 | Aller au panneau voisin | Ctrl+Alt+flèches |
 | Fermer le panneau actif (ou l'onglet s'il est seul) | Ctrl+Shift+W |

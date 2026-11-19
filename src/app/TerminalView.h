@@ -62,6 +62,15 @@ public:
     void sendText(const QString &text);  // as if typed
     QPoint cursorPosition() const { return {m_screen->cursorColumn() + 1, int(m_screen->cursorRow() + 1)}; }
     QSize terminalSize() const { return {m_screen->columns(), m_screen->rows()}; }
+    // Plain text for the Claude bridge: lines from 'from' (or the last maxLines
+    // when from < 0) up to the cursor line, trailing blanks removed.
+    struct TextSnapshot {
+        std::int64_t first = 0;
+        std::int64_t cursorLine = 0;
+        std::uint64_t revision = 0;
+        QStringList lines;
+    };
+    TextSnapshot textSnapshot(std::int64_t from, int maxLines) const;
 
     void setShowTimestamps(bool show);
     void setShowLineNumbers(bool show);

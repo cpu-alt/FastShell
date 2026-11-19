@@ -1,9 +1,11 @@
 // Copyright 2026 FastShell contributors. Apache-2.0.
 #include "net/SftpClient.h"
+#include "net/SudoCommand.h"
 
 #include <QCoreApplication>
 #include <QFile>
 #include <QFileInfo>
+#include <QRandomGenerator>
 #include <deque>
 #include <fcntl.h>
 #include <vector>
@@ -15,6 +17,7 @@ namespace {
 
 constexpr int InFlight = 16;                       // pipelined requests per transfer
 constexpr std::size_t PreferredChunk = 256 * 1024;  // capped by the server limits
+constexpr qsizetype MaxEditSize = 16 * 1024 * 1024;  // built-in editor limit
 
 QString joinPath(const QString &dir, const QString &name) {
     return dir.endsWith(QLatin1Char('/')) ? dir + name : dir + QLatin1Char('/') + name;
@@ -263,6 +266,172 @@ public Q_SLOTS:
         Q_EMIT changed(parentOf(remote));
     }
 
+    // Permission refused (also a parent folder that may not be entered).
+    bool lastDenied() const {
+        if (!m_sftp) return false;
+        return sftp_get_error(m_sftp) == SSH_FX_PERMISSION_DENIED
+               || QString::fromUtf8(ssh_get_error(m_session.get())).contains(QLatin1String("Permission denied"), Qt::CaseInsensitive);
+    }
+
+    // Runs one command on its own SSH channel, `input` on its standard input.
+    // Returns the exit status, or -1 when the channel failed.
+    int run(const QString &command, const QByteArray &input, QByteArray *out, QByteArray *err) {
+        ssh_channel ch = ssh_channel_new(m_session.get());
+        if (!ch) return -1;
+        auto done = [&](int status) {
+            if (ssh_channel_is_open(ch)) ssh_channel_close(ch);
+            ssh_channel_free(ch);
+            return status;
+        };
+        if (ssh_channel_open_session(ch) != SSH_OK || ssh_channel_request_exec(ch, command.toUtf8().constData()) != SSH_OK) {
+            return done(-1);
+        }
+        if (!input.isEmpty() && ssh_channel_write(ch, input.constData(), uint32_t(input.size())) != int(input.size())) {
+            return done(-1);
+        }
+        ssh_channel_send_eof(ch);
+        char buffer[16384];
+        for (;;) {
+            const int n = ssh_channel_read_timeout(ch, buffer, sizeof buffer, 0, 200);
+            if (n == SSH_ERROR) return done(-1);
+            if (n > 0) {
+                out->append(buffer, n);
+                if (out->size() > MaxEditSize) return done(-1);
+            }
+            const int e = ssh_channel_read_nonblocking(ch, buffer, sizeof buffer, 1);
+            if (e > 0 && err->size() < 4096) err->append(buffer, e);
+            if (*m_stop) return done(-1);
+            if (n == 0 && e <= 0 && (ssh_channel_is_eof(ch) || !ssh_channel_is_open(ch))) break;
+        }
+        // The exit status may arrive just after the end of the output.
+        for (int i = 0; i < 50; ++i) {
+            uint32_t code = 0;
+            char *signal = nullptr;
+            const int rc = ssh_channel_get_exit_state(ch, &code, &signal, nullptr);
+            if (signal) ssh_string_free_char(signal);
+            if (rc == SSH_OK) return done(signal ? -1 : int(code));
+            if (rc != SSH_AGAIN) break;
+            ssh_channel_poll_timeout(ch, 100, 0);
+        }
+        return done(-1);
+    }
+
+    // Message from sudo or the script (sudo never echoes the password: -S -p '').
+    static QString sudoError(const QByteArray &err) {
+        const QString text = QString::fromUtf8(err).trimmed();
+        if (text.contains(QLatin1String("incorrect password")) || text.contains(QLatin1String("no password was provided"))) {
+            return tr("Wrong sudo password.");
+        }
+        if (text.contains(QLatin1String("not in the sudoers")) || text.contains(QLatin1String("not allowed"))) {
+            return tr("This account may not use sudo.");
+        }
+        return text.isEmpty() ? tr("sudo failed") : text.left(500);
+    }
+
+    // Plain SFTP write; returns an error message, empty when written.
+    QString writeSftp(const QString &path, const QByteArray &data, int flags, int mode) {
+        sftp_file file = sftp_open(m_sftp, path.toUtf8().constData(), flags, mode_t(mode));
+        if (!file) return error(tr("Cannot write %1").arg(path));
+        QString message;
+        qsizetype done = 0;
+        while (done < data.size()) {
+            const std::size_t chunk = std::min<std::size_t>(m_writeChunk, std::size_t(data.size() - done));
+            const ssize_t n = sftp_write(file, data.constData() + done, chunk);
+            if (n <= 0) {
+                message = error(tr("Write failed"));
+                break;
+            }
+            done += qsizetype(n);
+        }
+        if (sftp_close(file) != SSH_OK && message.isEmpty()) message = error(tr("Write failed"));
+        return message;
+    }
+
+    // `password` empty: plain SFTP. Otherwise through sudo (see SudoCommand.h).
+    void readFile(quint64 id, const QString &path, QByteArray password) {
+        if (!ensureOpen()) {
+            Q_EMIT fileRead(id, {}, tr("Not connected"), false);
+            return;
+        }
+        if (!password.isEmpty()) {
+            QByteArray out, err;
+            password.append('\n');
+            const int status = run(sudo::readCommand(path), password, &out, &err);
+            password.fill('\0');
+            if (status != 0) {
+                Q_EMIT fileRead(id, {}, status < 0 ? tr("Read failed (file over 16 MB or connection lost)") : sudoError(err), false);
+            } else {
+                Q_EMIT fileRead(id, out, QString(), false);
+            }
+            return;
+        }
+        sftp_file file = sftp_open(m_sftp, path.toUtf8().constData(), O_RDONLY, 0);
+        if (!file) {
+            Q_EMIT fileRead(id, {}, error(tr("Cannot open %1").arg(path)), lastDenied());
+            return;
+        }
+        QByteArray data;
+        std::vector<char> buffer(m_readChunk);
+        QString message;
+        for (;;) {
+            const ssize_t n = sftp_read(file, buffer.data(), buffer.size());
+            if (n < 0) {
+                message = error(tr("Read failed"));
+                break;
+            }
+            if (n == 0) break;
+            data.append(buffer.data(), qsizetype(n));
+            if (data.size() > MaxEditSize) {
+                message = tr("%1 is too large to edit (over 16 MB)").arg(path);
+                break;
+            }
+            if (*m_stop) {
+                message = tr("Cancelled");
+                break;
+            }
+        }
+        sftp_close(file);
+        Q_EMIT fileRead(id, message.isEmpty() ? data : QByteArray(), message, false);
+    }
+
+    // Without sudo: writes in place (like nano/vi), which keeps the owner and
+    // permissions. With sudo: private temporary file, then replaced in one step.
+    void writeFile(quint64 id, const QString &path, const QByteArray &data, QByteArray password) {
+        if (!ensureOpen()) {
+            Q_EMIT fileWritten(id, tr("Not connected"), false);
+            return;
+        }
+        if (password.isEmpty()) {
+            const QString message = writeSftp(path, data, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            Q_EMIT fileWritten(id, message, !message.isEmpty() && lastDenied());
+            Q_EMIT changed(parentOf(path));
+            return;
+        }
+        char *home = sftp_canonicalize_path(m_sftp, ".");
+        const QString dir = home ? QString::fromUtf8(home) : QString();
+        ssh_string_free_char(home);
+        const QString temp = joinPath(dir, QStringLiteral(".fastshell-edit-%1")
+                                               .arg(QRandomGenerator::system()->generate64(), 16, 16, QLatin1Char('0')));
+        // O_EXCL: never follows or reuses an existing file; 0600: only this account reads it.
+        QString message = dir.isEmpty() ? tr("No home folder on the server")
+                                        : writeSftp(temp, data, O_WRONLY | O_CREAT | O_EXCL, 0600);
+        if (message.isEmpty()) {
+            sftp_attributes a = sftp_stat(m_sftp, temp.toUtf8().constData());
+            if (!a || qint64(a->size) != data.size()) message = tr("The temporary copy is incomplete; nothing was changed.");
+            if (a) sftp_attributes_free(a);
+        }
+        if (message.isEmpty()) {
+            QByteArray out, err;
+            password.append('\n');
+            const int status = run(sudo::writeCommand(path, temp), password, &out, &err);
+            if (status != 0) message = status < 0 ? tr("Connection lost; the file was not changed.") : sudoError(err);
+        }
+        password.fill('\0');
+        sftp_unlink(m_sftp, temp.toUtf8().constData());
+        Q_EMIT fileWritten(id, message, false);
+        Q_EMIT changed(parentOf(path));
+    }
+
     void makeDirectory(const QString &path) {
         if (!ensureOpen()) return;
         if (sftp_mkdir(m_sftp, path.toUtf8().constData(), 0755) != SSH_OK) {
@@ -297,6 +466,8 @@ Q_SIGNALS:
     void transferStarted(quint64 id, const QString &name, bool upload, qint64 size);
     void transferProgress(quint64 id, qint64 done, qint64 total);
     void transferFinished(quint64 id, bool ok, const QString &message);
+    void fileRead(quint64 id, const QByteArray &data, const QString &error, bool denied);
+    void fileWritten(quint64 id, const QString &error, bool denied);
 
 private:
     SshOptions m_options;
@@ -328,6 +499,8 @@ SftpClient::SftpClient(SshOptions options, SshPrompter prompter, QObject *parent
     connect(m_worker, &SftpWorker::transferStarted, this, &SftpClient::transferStarted);
     connect(m_worker, &SftpWorker::transferProgress, this, &SftpClient::transferProgress);
     connect(m_worker, &SftpWorker::transferFinished, this, &SftpClient::transferFinished);
+    connect(m_worker, &SftpWorker::fileRead, this, &SftpClient::fileRead);
+    connect(m_worker, &SftpWorker::fileWritten, this, &SftpClient::fileWritten);
     m_thread.setObjectName(QStringLiteral("sftp"));
     m_thread.start();
 }
@@ -356,6 +529,21 @@ quint64 SftpClient::download(const QString &remotePath, const QString &localPath
 quint64 SftpClient::upload(const QString &localPath, const QString &remotePath) {
     const quint64 id = m_nextId++;
     QMetaObject::invokeMethod(m_worker, [w = m_worker, id, localPath, remotePath] { w->upload(id, localPath, remotePath); },
+                              Qt::QueuedConnection);
+    return id;
+}
+
+quint64 SftpClient::readFile(const QString &path, const QByteArray &sudoPassword) {
+    const quint64 id = m_nextId++;
+    QMetaObject::invokeMethod(m_worker, [w = m_worker, id, path, sudoPassword] { w->readFile(id, path, sudoPassword); },
+                              Qt::QueuedConnection);
+    return id;
+}
+
+quint64 SftpClient::writeFile(const QString &path, const QByteArray &data, const QByteArray &sudoPassword) {
+    const quint64 id = m_nextId++;
+    QMetaObject::invokeMethod(m_worker,
+                              [w = m_worker, id, path, data, sudoPassword] { w->writeFile(id, path, data, sudoPassword); },
                               Qt::QueuedConnection);
     return id;
 }

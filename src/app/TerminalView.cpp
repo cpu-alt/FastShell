@@ -1159,3 +1159,21 @@ void TerminalView::startPaneDrag() {
     g_dragSource = nullptr;
     m_headerPress = QPoint(-1, -1);
 }
+
+TerminalView::TextSnapshot TerminalView::textSnapshot(std::int64_t from, int maxLines) const {
+    TextSnapshot snap;
+    snap.revision = m_screen->revision();
+    snap.cursorLine = m_screen->screenTopLine() + m_screen->cursorRow();
+    std::int64_t first = from < 0 ? snap.cursorLine - maxLines + 1 : from;
+    first = std::max({first, snap.cursorLine - maxLines + 1, m_screen->firstLine()});
+    snap.first = first;
+    QString current;
+    for (std::int64_t l = first; l <= snap.cursorLine; ++l) {
+        const Line *line = m_screen->line(l);
+        current += line ? toQString(m_screen->text(l, 0, l, m_screen->columns() - 1)) : QString();
+        if (line && line->wrapped && l < snap.cursorLine) continue;  // one logical line
+        while (!current.isEmpty() && current.back().isSpace()) current.chop(1);
+        snap.lines << std::exchange(current, QString());
+    }
+    return snap;
+}

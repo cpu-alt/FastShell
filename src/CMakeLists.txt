@@ -46,6 +46,8 @@ qt_add_executable(fastshell WIN32 MACOSX_BUNDLE
     app/SessionDialog.h app/SessionDialog.cpp
     app/SessionPanel.h app/SessionPanel.cpp
     app/FilerPanel.h app/FilerPanel.cpp
+    app/EditorWindow.h app/EditorWindow.cpp
+    app/EditorText.h app/EditorText.cpp
     app/Panels.h app/Panels.cpp
     app/ManageDialogs.h app/ManageDialogs.cpp
     app/TabPage.h app/TabPage.cpp
@@ -53,6 +55,9 @@ qt_add_executable(fastshell WIN32 MACOSX_BUNDLE
     app/RdpView.h app/RdpView.cpp
     app/Style.h app/Style.cpp
     app/UpdateCheck.h app/UpdateCheck.cpp
+    app/McpProtocol.h app/McpProtocol.cpp
+    app/McpServer.h app/McpServer.cpp
+    app/MainWindowClaude.cpp
     app/Updater.h app/Updater.cpp
     app/Icons.h
     app/Logo.h

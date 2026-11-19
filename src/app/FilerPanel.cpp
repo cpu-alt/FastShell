@@ -25,6 +25,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include "app/EditorWindow.h"
 #include "app/Icons.h"
 #include "app/TerminalView.h"
 
@@ -333,6 +334,12 @@ void FilerPanel::showMenu(const QPoint &pos) {
     if (index.isValid()) {
         menu.addAction(directory ? tr("Open") : (m_remote ? tr("Download") : tr("Open")), this,
                        [this, index] { activate(index); });
+        if (!directory) {
+            menu.addAction(tr("Edit"), this, [this, path] {
+                if (!m_remote) EditorWindow::openLocal(path, window());
+                else if (m_client) EditorWindow::openRemote(m_client, path, window());
+            });
+        }
     }
     if (m_view) {
         const QString dir = directory ? path : (m_remote ? remoteParent(path) : QFileInfo(path).absolutePath());

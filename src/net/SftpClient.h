@@ -40,6 +40,10 @@ public:
     void makeDirectory(const QString &path);
     void remove(const QString &path, bool isDirectory);
     void rename(const QString &from, const QString &to);
+    // Whole small text files in memory (built-in editor): never written to a local file.
+    // With a sudo password, through `sudo` (password only on sudo's standard input).
+    quint64 readFile(const QString &path, const QByteArray &sudoPassword = {});
+    quint64 writeFile(const QString &path, const QByteArray &data, const QByteArray &sudoPassword = {});
     void cancelTransfers();
     QString host() const { return m_host; }
 
@@ -51,6 +55,8 @@ Q_SIGNALS:
     void transferStarted(quint64 id, const QString &name, bool upload, qint64 size);
     void transferProgress(quint64 id, qint64 done, qint64 total);
     void transferFinished(quint64 id, bool ok, const QString &message);
+    void fileRead(quint64 id, const QByteArray &data, const QString &error, bool denied);  // error empty = ok; denied: retry with sudo
+    void fileWritten(quint64 id, const QString &error, bool denied);
 
 private:
     QThread m_thread;

@@ -19,6 +19,10 @@ add_executable(fastshell_session_tests
     test_sessions.cpp
     test_update.cpp
     test_app_security.cpp
+    test_editor.cpp
+    test_mcp.cpp
+    ${PROJECT_SOURCE_DIR}/src/app/McpProtocol.cpp
+    ${PROJECT_SOURCE_DIR}/src/app/EditorText.cpp
     ${PROJECT_SOURCE_DIR}/src/app/SessionStore.cpp
     ${PROJECT_SOURCE_DIR}/src/app/SessionStore.h
     ${PROJECT_SOURCE_DIR}/src/app/UpdateCheck.cpp

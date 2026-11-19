@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "fastshell": {
+      "type": "http",
+      "url": "http://127.0.0.1:47821/mcp",
+      "headers": { "Authorization": "Bearer COLLER_ICI_LA_CLE_DE_FASTSHELL" }
+    }
+  }
+}

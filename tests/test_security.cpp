@@ -122,3 +122,35 @@ TEST(Security, TelnetCapsSubnegotiation) {
     const QByteArray after = engine.receive(QByteArray("\xff\xf0ok", 4));
     EXPECT_EQ(after, "ok");
 }
+
+// Built-in editor, protected files: commands run through sudo.
+#include "net/SudoCommand.h"
+
+TEST(Security, SudoCommandQuotesHostilePaths) {
+    const QString hostile = QStringLiteral("/etc/x'; rm -rf / #$(reboot)`id`\nwhoami");
+    const QString read = sudo::readCommand(hostile);
+    EXPECT_TRUE(read.startsWith(QStringLiteral("sudo -S -k -p '' -- cat -- '")));
+    // The path is one single-quoted argument: every quote inside is closed, escaped, reopened.
+    EXPECT_TRUE(read.endsWith(QStringLiteral("'/etc/x'\\''; rm -rf / #$(reboot)`id`\nwhoami'")));
+    EXPECT_EQ(sudo::shellQuote(QStringLiteral("it's")), QStringLiteral("'it'\\''s'"));
+    EXPECT_EQ(sudo::shellQuote(QString()), QStringLiteral("''"));
+}
+
+TEST(Security, SudoWriteKeepsPathsOutOfTheScript) {
+    const QString target = QStringLiteral("/etc/freeradius/3.0/clients.conf");
+    const QString temp = QStringLiteral("/home/u/.fastshell-edit-0123456789abcdef");
+    const QString cmd = sudo::writeCommand(target, temp);
+    // Script first (no path in it), then the two paths as $1 and $2.
+    const QString expectedTail = QStringLiteral(" fastshell-edit '") + target + QStringLiteral("' '") + temp + QLatin1Char('\'');
+    EXPECT_TRUE(cmd.endsWith(expectedTail));
+    const QString script = cmd.left(cmd.size() - expectedTail.size());
+    EXPECT_FALSE(script.contains(target));
+    EXPECT_FALSE(script.contains(temp));
+    // Atomic replacement with a backup, owner and mode of the original.
+    EXPECT_TRUE(script.contains(QStringLiteral("set -e")));
+    EXPECT_TRUE(script.contains(QStringLiteral(".bak")));
+    EXPECT_TRUE(script.contains(QStringLiteral("chown --reference")));
+    EXPECT_TRUE(script.contains(QStringLiteral("mv -f --")));
+    // The password is never part of a command: sudo reads it on stdin with no prompt.
+    EXPECT_TRUE(cmd.startsWith(QStringLiteral("sudo -S -k -p '' -- sh -c '")));
+}
