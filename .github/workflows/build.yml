@@ -2,6 +2,12 @@
 # Pushing a tag "vX.Y.Z" (same as VERSION in CMakeLists.txt) also publishes
 # the GitHub release with the Windows package and its SHA-256 checksum,
 # which the installer and the in-app updater download.
+#
+# Code signing (SignPath Foundation): on a tag, FastShell.exe is sent to SignPath, signed
+# (after manual approval on signpath.io), put back into the package, and the zip and its
+# checksum are rebuilt before the release is published. Only FastShell.exe is signed, not the
+# third-party DLLs. Until the secret SIGNPATH_API_TOKEN exists, these steps are skipped and the
+# release is published unsigned, as before. Setup: docs/code-signing.md.
 name: Build
 
 on:
@@ -19,6 +25,9 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write   # to publish the release on tags
+    env:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORGANIZATION_ID: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
     defaults:
       run:
         shell: msys2 {0}
@@ -63,6 +72,36 @@ jobs:
 
       - name: Package
         run: bash tools/package.sh build package
+
+      # The unsigned program alone, as the SignPath "github-artifact" to sign.
+      - name: Upload FastShell.exe for signing
+        id: unsigned
+        if: startsWith(github.ref, 'refs/tags/v') && env.SIGNPATH_API_TOKEN != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: FastShell-exe-unsigned
+          path: package/FastShell/FastShell.exe
+          if-no-files-found: error
+
+      - name: Sign FastShell.exe with SignPath
+        if: startsWith(github.ref, 'refs/tags/v') && env.SIGNPATH_API_TOKEN != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: FastShell
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ steps.unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 18000   # manual approval; GitHub stops jobs after 6 h
+          output-artifact-directory: signed
+
+      - name: Put the signed program back into the package
+        if: startsWith(github.ref, 'refs/tags/v') && env.SIGNPATH_API_TOKEN != ''
+        run: |
+          cp signed/FastShell.exe package/FastShell/FastShell.exe
+          powershell.exe -NoProfile -Command "\$s = Get-AuthenticodeSignature package/FastShell/FastShell.exe; \$s.Status; if (\$s.Status -ne 'Valid') { exit 1 }"
+          bash tools/package.sh --zip-only build package
 
       - uses: actions/upload-artifact@v4
         with:

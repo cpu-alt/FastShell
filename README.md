@@ -72,3 +72,7 @@ Signaler une faille de sécurité : [SECURITY.md](SECURITY.md).
 FastShell est développé par **Nathan Witz & Patrizio Ventura**, sous licence
 [Apache-2.0](LICENSE). Quelques composants tiers sont repris sous leur propre licence : voir
 [NOTICE](NOTICE).
+
+Signature du code : free code signing provided by [SignPath.io](https://about.signpath.io),
+certificate by [SignPath Foundation](https://signpath.org). Politique de signature et
+confidentialité : [docs/code-signing.md](docs/code-signing.md).

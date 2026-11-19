@@ -72,6 +72,10 @@ compilé et testé, et un tag `vX.Y.Z` publie la release avec le paquet et son e
 4. La release apparaît dans l'onglet *Releases* du dépôt. La commande d'installation et le
    bouton « Check for updates » de l'application la proposent aussitôt.
 
+Une fois SignPath configuré, le build attend en plus l'approbation de la signature de
+`FastShell.exe` sur [app.signpath.io](https://app.signpath.io) avant de publier : voir
+[code-signing.md](code-signing.md).
+
 ## Organisation du code
 
 ```
