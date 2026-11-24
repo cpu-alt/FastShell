@@ -293,8 +293,8 @@ TEST_F(SshLogin, NewHostIsTrustedWithoutAQuestion) {
     EXPECT_TRUE(saved.readAll().contains("[127.0.0.1]:"));
 }
 
-TEST_F(SshLogin, ChangedHostKeyIsStillRefused) {
-    // Another key saved for this host: the connection must be refused.
+TEST_F(SshLogin, ChangedHostKeyIsReplaced) {
+    // Another key saved for this host (switch replaced): the new key replaces it.
     QByteArray blob("\0\0\0\x0bssh-ed25519\0\0\0\x20", 19 + 4);
     blob += QByteArray(32, '\x42');
     QFile file(m_options.knownHostsFile);
@@ -305,9 +305,13 @@ TEST_F(SshLogin, ChangedHostKeyIsStillRefused) {
     m_options.user = QStringLiteral("alice");
     m_options.password = QStringLiteral("secret");
     const LoginRun run = connect(m_options, {});
-    EXPECT_FALSE(run.result.session);
-    EXPECT_TRUE(run.result.error.contains(QStringLiteral("has changed"))) << run.result.error.toStdString();
+    ASSERT_TRUE(run.result.session) << run.result.error.toStdString();
+    EXPECT_FALSE(run.result.newHostKey.isEmpty());
     EXPECT_EQ(run.questions, 0);
+    ASSERT_TRUE(file.open(QIODevice::ReadOnly));
+    const QByteArray saved = file.readAll();
+    EXPECT_FALSE(saved.contains(blob.toBase64()));  // old key gone
+    EXPECT_TRUE(saved.contains("[127.0.0.1]:"));      // new key saved
 }
 
 TEST_F(SshLogin, CtrlCCancels) {

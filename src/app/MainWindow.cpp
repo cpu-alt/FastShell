@@ -204,6 +204,7 @@ MainWindow::MainWindow(QWidget *parent)
     createToolBar();
     createStatusBar();
     createClaude();
+    createFileServer();
 
     // A window saved before the panels existed would be too small for them.
     const bool hasLayout = settings.contains(QStringLiteral("window/state"));
@@ -299,6 +300,7 @@ void MainWindow::createMenus() {
         const QString path = QFileDialog::getOpenFileName(this, tr("Edit a file"));
         if (!path.isEmpty()) EditorWindow::openLocal(path, this);
     });
+    add(session, tr("File server (TFTP / HTTP)..."), QKeySequence(), [this] { showFileServer(); });
     add(session, tr("Duplicate tab"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D), [this] {
         if (TerminalView *v = current()) openSession(m_sessions.value(v));
     });
@@ -1168,6 +1170,7 @@ void MainWindow::showPaneMenu(TerminalView *view, const QPoint &globalPos, int c
 // dragged, resting on a tab switches to it.
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
     if (watched == m_tabs->tabBar() && tabBarDragEvent(event)) return true;
+    if (fileServerClicked(watched, event)) return true;
     return QMainWindow::eventFilter(watched, event);
 }
 

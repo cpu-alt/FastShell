@@ -158,7 +158,7 @@ TEST(Mcp, InitializeAndListTools) {
     QJsonObject tools;
     protocol.handle({{QStringLiteral("id"), 2}, {QStringLiteral("method"), QStringLiteral("tools/list")}},
                     [&](const QJsonObject &r) { tools = r; });
-    EXPECT_EQ(tools[QStringLiteral("result")][QStringLiteral("tools")].toArray().size(), 9);
+    EXPECT_EQ(tools[QStringLiteral("result")][QStringLiteral("tools")].toArray().size(), 10);
 }
 
 TEST(Mcp, ListReadAndSend) {
@@ -384,4 +384,28 @@ TEST(Mcp, WaitForUser) {
     EXPECT_FALSE(isError(r));
     EXPECT_FALSE(textOf(r).contains(QStringLiteral("not answered")));
     EXPECT_TRUE(textOf(r).endsWith(QStringLiteral("Switch#")));
+}
+
+TEST(Mcp, FileServerTool) {
+    app();
+    struct Host : FakeHost {
+        QString action;
+        void fileServer(const QString &a, const QJsonObject &, std::function<void(const QString &, bool)> done) override {
+            action = a;
+            done(QStringLiteral("TFTP on 0.0.0.0 port 69"), false);
+        }
+    } host;
+    mcp::Protocol protocol(&host);
+    QJsonObject r = call(protocol, QStringLiteral("file_server"), {{QStringLiteral("action"), QStringLiteral("status")}});
+    EXPECT_FALSE(isError(r));
+    EXPECT_EQ(host.action, QStringLiteral("status"));
+    EXPECT_EQ(textOf(r), QStringLiteral("TFTP on 0.0.0.0 port 69"));
+    host.action.clear();
+    r = call(protocol, QStringLiteral("file_server"), {{QStringLiteral("action"), QStringLiteral("delete")}});
+    EXPECT_TRUE(isError(r));
+    EXPECT_TRUE(host.action.isEmpty());  // unknown actions never reach FastShell
+
+    FakeHost plain;  // a host without a file server
+    mcp::Protocol other(&plain);
+    EXPECT_TRUE(isError(call(other, QStringLiteral("file_server"), {{QStringLiteral("action"), QStringLiteral("start")}})));
 }

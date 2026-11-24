@@ -2,6 +2,7 @@
 #include "net/SshCommon.h"
 
 #include <QCoreApplication>
+#include <QFile>
 #include <QMetaObject>
 #include <chrono>
 #include <future>
@@ -35,6 +36,33 @@ QString serverFingerprint(ssh_session s) {
     }
     ssh_key_free(key);
     return result;
+}
+
+// Removes every known_hosts line for this host (plain "host" or "[host]:port",
+// possibly in a comma list), so the new key can replace the old one.
+void forgetHostKey(ssh_session s, const QString &host, int port) {
+    char *path = nullptr;
+    if (ssh_options_get(s, SSH_OPTIONS_KNOWNHOSTS, &path) != SSH_OK || !path) return;
+    const QString fileName = QString::fromLocal8Bit(path);
+    ssh_string_free_char(path);
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly)) return;
+    const QList<QByteArray> lines = file.readAll().split('\n');
+    file.close();
+
+    const QByteArray plain = host.toUtf8();
+    const QByteArray bracketed = "[" + plain + "]:" + QByteArray::number(port);
+    QByteArray kept;
+    for (const QByteArray &line : lines) {
+        const QByteArray names = line.trimmed().split(' ').value(0);
+        bool match = false;
+        for (const QByteArray &name : names.split(',')) {
+            if (name == bracketed || (port == 22 && name == plain)) match = true;
+        }
+        if (!match && !line.isEmpty()) kept += line + '\n';
+    }
+    if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) file.write(kept);
 }
 
 enum class LegacyLevel { None, Compatible, Full };
@@ -166,10 +194,14 @@ SshConnectResult sshConnect(const SshOptions &options, const SshPrompter &prompt
         break;
     case SSH_KNOWN_HOSTS_CHANGED:
     case SSH_KNOWN_HOSTS_OTHER:
-        result.error = tr("WARNING: the host key of %1 has changed (%2). "
-                          "Someone may be intercepting the connection. Connection refused.")
-                           .arg(options.host, fingerprint);
-        return result;
+        // Common here: a switch replaced by another model on the same IP.
+        // Replace the old key, warn in the terminal and go on (user's choice).
+        forgetHostKey(s, options.host, options.port);
+        ssh_session_update_known_hosts(s);
+        result.newHostKey = fingerprint;
+        prompter.notice(tr("Note: the host key of %1 has changed (%2). The new key replaces the old one.\r\n")
+                            .arg(options.host, fingerprint));
+        break;
     case SSH_KNOWN_HOSTS_NOT_FOUND:
     case SSH_KNOWN_HOSTS_UNKNOWN:
         // First connection to this host: trust it and remember its key, without

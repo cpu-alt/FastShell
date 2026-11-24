@@ -206,6 +206,30 @@ Sécurité :
   pages web refusées (en-têtes Origin / Host). Rien n'est journalisé.
 - La barre d'état affiche « Claude: on », puis **CLAUDE CONNECTED** quand Claude a agi dans la
   dernière minute.
+- **Serveur de fichiers** : l'outil `file_server` permet à Claude de démarrer le serveur TFTP
+  (vous confirmez toujours, avec le dossier affiché), de lister les fichiers et de suivre le
+  transfert (`wait`). Il ne peut pas l'arrêter pendant un transfert.
+
+## Serveur de fichiers (TFTP / HTTP)
+
+*Session → File server (TFTP / HTTP)...* partage un dossier du PC pour envoyer un fichier à un
+équipement, surtout un firmware, sans serveur TFTP externe.
+
+1. Choisir le **dossier** (ex. celui du firmware), l'**interface** (ou toutes), le port TFTP
+   (69) et, si besoin, HTTP (8080, lisible aussi dans un navigateur).
+2. **Start**. La première fois, Windows demande d'autoriser FastShell dans le pare-feu :
+   l'autoriser pour le réseau des équipements.
+3. Sur le switch, par exemple :
+   - FS S3900 : `copy tftp:s3900.bin flash:Switch.bin`, puis l'adresse du PC à la question ;
+   - Cisco / autres : `copy tftp://10.1.4.250/s3900.bin flash:`.
+4. La progression s'affiche dans la fenêtre et dans la barre d'état (clic = ouvrir la fenêtre).
+
+Détails : lecture seule par défaut ; *Allow uploads* accepte les envois de l'équipement
+(`copy running-config tftp:`) dans de **nouveaux** fichiers seulement, jamais d'écrasement.
+Les noms sont confinés au dossier (pas de `..`, de lecteur, de flux `:` ni de nom de
+périphérique Windows). Options TFTP blksize / tsize / timeout, et numéros de bloc qui
+rebouclent après 65535 (fichiers de plus de 32 Mo en blocs de 512). Si le port 69 est déjà pris
+(tftpd64…), fermer l'autre serveur.
 
 ## Mode portable
 

@@ -159,6 +159,19 @@ QJsonArray toolList() {
                             "its id. FastShell logs in with the saved credentials; Claude never sees them."),
              schema({{QStringLiteral("name"), prop("string", QStringLiteral("Exact saved session name."))}},
                     {QStringLiteral("name")})),
+        tool("file_server",
+             QStringLiteral("FastShell's built-in TFTP (and optional HTTP) server, to send a file such as a firmware "
+                            "from this PC to a device: start it, then run the copy command on the device (e.g. "
+                            "'copy tftp://<PC address>/<file> flash:<name>'), then action=wait to follow the transfer. "
+                            "action=status: folder, PC addresses, files, last transfers. start: the user confirms; "
+                            "folder is optional (default: the one set in FastShell). stop: refused while a transfer "
+                            "runs. wait: returns when the running transfers end."),
+             schema({{QStringLiteral("action"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
+                                                            {QStringLiteral("enum"), QJsonArray{QStringLiteral("status"), QStringLiteral("start"),
+                                                                                                QStringLiteral("stop"), QStringLiteral("wait")}}}},
+                     {QStringLiteral("folder"), prop("string", QStringLiteral("start: folder of this PC to share (read only)."))},
+                     {QStringLiteral("timeout_seconds"), prop("number", QStringLiteral("wait: default 600, max 1800."))}},
+                    {QStringLiteral("action")})),
     };
 }
 
@@ -178,7 +191,7 @@ const QString &instructions() {
         "by reading the configuration back, and save it only when the user wants. Passwords are never shown and "
         "never typed by Claude: write the exact commands with <placeholders> for the user, and when the device "
         "asks for a password call wait_for_user. Ask the user before disruptive changes (reload, erase, shutting "
-        "the uplink or management interface).");
+        "the uplink or management interface). To send a file (firmware) from the PC to a device, use file_server.");
     return text;
 }
 
@@ -390,6 +403,17 @@ void Protocol::callTool(const QString &name, const QJsonObject &args, const Done
             if (id <= 0) done(toolError(error));
             else done(toolText(QStringLiteral("Opened: session %1. Use read_output with new_only=true to follow the login.").arg(id)));
         });
+        return;
+    }
+
+    if (name == QLatin1String("file_server")) {
+        const QString action = args.value(QStringLiteral("action")).toString();
+        static const QStringList actions{QStringLiteral("status"), QStringLiteral("start"), QStringLiteral("stop"), QStringLiteral("wait")};
+        if (!actions.contains(action)) {
+            done(toolError(QStringLiteral("action must be status, start, stop or wait.")));
+            return;
+        }
+        m_host->fileServer(action, args, [done](const QString &text, bool error) { done(error ? toolError(text) : toolText(text)); });
         return;
     }
 

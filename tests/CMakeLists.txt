@@ -7,6 +7,7 @@ add_executable(fastshell_tests
     test_serial.cpp
     test_ssh_login.cpp
     test_security.cpp
+    test_fileserver.cpp
     bench_parser.cpp)
 target_link_libraries(fastshell_tests PRIVATE fsterminal fsbackends ssh GTest::gtest GTest::gtest_main)
 target_include_directories(fastshell_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)

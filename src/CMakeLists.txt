@@ -25,7 +25,8 @@ add_library(fsbackends STATIC
     net/SshBackend.h net/SshBackend.cpp
     net/SftpClient.h net/SftpClient.cpp
     net/TelnetBackend.h net/TelnetBackend.cpp
-    net/SerialBackend.h net/SerialBackend.cpp)
+    net/SerialBackend.h net/SerialBackend.cpp
+    net/FileServer.h net/FileServer.cpp)
 target_link_libraries(fsbackends PUBLIC fscore Qt6::Network Qt6::SerialPort PRIVATE ssh)
 
 # --- widgets ---------------------------------------------------------------
@@ -58,6 +59,8 @@ qt_add_executable(fastshell WIN32 MACOSX_BUNDLE
     app/McpProtocol.h app/McpProtocol.cpp
     app/McpServer.h app/McpServer.cpp
     app/MainWindowClaude.cpp
+    app/MainWindowFiles.cpp
+    app/FileServerDialog.h app/FileServerDialog.cpp
     app/Updater.h app/Updater.cpp
     app/Icons.h
     app/Logo.h

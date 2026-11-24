@@ -9,6 +9,8 @@
 #include "app/SessionStore.h"
 
 class FilerPanel;
+class FileServer;
+class FileServerDialog;
 class OutlinePanel;
 class QDockWidget;
 class QLabel;
@@ -101,6 +103,16 @@ private:
     void attention(int id, const QString &message) override;
     QList<mcp::SavedSession> savedSessions() const override;
     void openSaved(const QString &name, std::function<void(int, const QString &)> done) override;
+    void fileServer(const QString &action, const QJsonObject &args, std::function<void(const QString &, bool)> done) override;
+
+    // Built-in TFTP / HTTP file server (MainWindowFiles.cpp).
+    void createFileServer();
+    void showFileServer();
+    void updateFileServerIndicator();
+    bool fileServerClicked(QObject *watched, QEvent *event);
+    FileServer *m_fileServer = nullptr;
+    QPointer<FileServerDialog> m_fileDialog;
+    QLabel *m_statusFiles = nullptr;
     QAction *m_claudeOpenAction = nullptr;
     McpServer *m_mcp = nullptr;
     QAction *m_claudeAction = nullptr;

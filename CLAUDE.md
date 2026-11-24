@@ -64,7 +64,8 @@ demander à l'utilisateur de la fermer.
 src/core/      CircularBuffer, ScopeGuard, SpinMutex, Cryptographic (AES-256-GCM), Telnet, Backend
 src/terminal/  VtParser (xterm), Screen (grille + historique + modes), CharWidth — sans GUI, testés
 src/pty/       ConPty (Windows), UnixPty (écrit, jamais compilé ni testé)
-src/net/       SshCommon (connexion+auth partagées), SshBackend, SftpClient, TelnetBackend, SerialBackend
+src/net/       SshCommon (connexion+auth partagées), SshBackend, SftpClient, TelnetBackend, SerialBackend,
+               FileServer (TFTP + HTTP pour envoyer un firmware, testé)
 src/widgets/   ScrollBar, Splitter, PopupWidget
 src/app/       MainWindow, TabPage, TerminalView, SessionStore (JSON + DPAPI, import/export),
                SessionPanel, SessionDialog, ManageDialogs, FilerPanel, Panels, Logo.h, Icons.h,
@@ -72,7 +73,8 @@ src/app/       MainWindow, TabPage, TerminalView, SessionStore (JSON + DPAPI, im
                Style (QSS, icônes, chevrons générés), DropPreview, RdpView, TextSafety.h
                (titres, collage, noms de fichiers SFTP), UpdateCheck, Updater, main.cpp,
                McpProtocol (Claude Code : outils MCP, règles mots de passe, HTTP ; testé),
-               McpServer (127.0.0.1), MainWindowClaude (menu Claude, accès par panneau)
+               McpServer (127.0.0.1), MainWindowClaude (menu Claude, accès par panneau),
+               FileServerDialog + MainWindowFiles (Session → File server, outil MCP file_server)
 tests/         GoogleTest (dont test_security, test_app_security, test_update, test_ssh_login)
 tools/         package.sh (paquet de release), make_icon.cpp (assets/fastshell.ico + docs/logo.png)
 docs/          guide.md, development.md, security-audit.md, screenshot.png

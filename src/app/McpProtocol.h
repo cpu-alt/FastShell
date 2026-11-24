@@ -107,6 +107,12 @@ public:
     virtual void openSaved(const QString &name, std::function<void(int, const QString &)> done) {
         done(-1, QStringLiteral("Opening sessions is not available."));
     }
+    // Built-in TFTP / HTTP file server: action "status", "start", "stop" or "wait"
+    // (args: folder, timeout_seconds). done(text, error).
+    virtual void fileServer(const QString & /*action*/, const QJsonObject & /*args*/,
+                            std::function<void(const QString &, bool)> done) {
+        done(QStringLiteral("The file server is not available."), true);
+    }
 };
 
 class Protocol {
