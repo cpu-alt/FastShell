@@ -120,6 +120,19 @@ QJsonArray toolList() {
                      {QStringLiteral("wait_seconds"), wait},
                      {QStringLiteral("filter"), filter}},
                     {QStringLiteral("session"), QStringLiteral("commands")})),
+        tool("run_on_sessions",
+             QStringLiteral("Runs the same commands on several terminals at once (in parallel) and returns the "
+                            "outputs grouped per terminal: compare devices, collect the same show on a whole "
+                            "stack, or apply one change everywhere. One confirmation for all the 'ask' panes. "
+                            "Same rules as run_commands."),
+             schema({{QStringLiteral("sessions"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")},
+                                                              {QStringLiteral("items"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+                                                              {QStringLiteral("description"), QStringLiteral("Session ids (2 to 20).")}}},
+                     {QStringLiteral("commands"), arrayOfStrings(QStringLiteral("Command lines, without Enter."))},
+                     {QStringLiteral("stop_on_error"), prop("boolean", QStringLiteral("Default true (per terminal)."))},
+                     {QStringLiteral("wait_seconds"), wait},
+                     {QStringLiteral("filter"), filter}},
+                    {QStringLiteral("sessions"), QStringLiteral("commands")})),
         tool("send_line",
              QStringLiteral("Runs one command (+ Enter) and returns its output. Same as run_commands with one command."),
              schema({{QStringLiteral("session"), session},
@@ -141,6 +154,12 @@ QJsonArray toolList() {
                      {QStringLiteral("keys"), arrayOfStrings(QStringLiteral("Keys in order."))},
                      {QStringLiteral("wait_seconds"), prop("number", QStringLiteral("Default 1."))}},
                     {QStringLiteral("session"), QStringLiteral("keys")})),
+        tool("vault_login",
+             QStringLiteral("At a login or password prompt, logs the terminal in with the account the user linked to "
+                            "it in FastShell's vault (list_sessions shows vault=\"name\" when there is one Claude may "
+                            "use). FastShell types the user name and password itself; Claude never sees them. Then "
+                            "read_output new_only=true to see the result. Without a linked account, use wait_for_user."),
+             schema({{QStringLiteral("session"), session}}, {QStringLiteral("session")})),
         tool("wait_for_user",
              QStringLiteral("When the device asks for a password (or anything only the user may type): shows the "
                             "message in FastShell and waits until the user has answered, then returns the new "
@@ -159,6 +178,23 @@ QJsonArray toolList() {
                             "its id. FastShell logs in with the saved credentials; Claude never sees them."),
              schema({{QStringLiteral("name"), prop("string", QStringLiteral("Exact saved session name."))}},
                     {QStringLiteral("name")})),
+        tool("open_sessions",
+             QStringLiteral("Opens several saved sessions at once (one confirmation): side_by_side=true puts them in "
+                            "one tab, split, so the user sees them together. Returns the new ids in order."),
+             schema({{QStringLiteral("names"), arrayOfStrings(QStringLiteral("Exact saved session names (1 to 8)."))},
+                     {QStringLiteral("side_by_side"), prop("boolean", QStringLiteral("Default true."))}},
+                    {QStringLiteral("names")})),
+        tool("notes",
+             QStringLiteral("Claude's notebook in FastShell, kept between conversations and visible to the user: "
+                            "device roles, topology, CLI quirks, what was changed and why. Read it at the start of "
+                            "a task (action=read), add short facts as you learn them (action=add), remove stale "
+                            "ones (action=remove, line number). Never store passwords or secrets."),
+             schema({{QStringLiteral("action"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
+                                                            {QStringLiteral("enum"), QJsonArray{QStringLiteral("read"), QStringLiteral("add"),
+                                                                                                QStringLiteral("remove")}}}},
+                     {QStringLiteral("text"), prop("string", QStringLiteral("add: the fact, one line."))},
+                     {QStringLiteral("line"), prop("integer", QStringLiteral("remove: line number from read."))}},
+                    {QStringLiteral("action")})),
         tool("file_server",
              QStringLiteral("FastShell's built-in TFTP (and optional HTTP) server, to send a file such as a firmware "
                             "from this PC to a device: start it, then run the copy command on the device (e.g. "
@@ -182,16 +218,42 @@ bool hasControl(const QString &text) {
     return false;
 }
 
+constexpr int MaxSessionsAtOnce = 20;
+constexpr int MaxOpenAtOnce = 8;
+constexpr int MaxNotesChars = 32 * 1024;
+
+// Why a command line may not be sent (empty when it may).
+QString commandError(const QString &text) {
+    if (text.size() > MaxLineLength) return QStringLiteral("Command too long.");
+    if (hasControl(text)) return QStringLiteral("One line per command, without control characters.");
+    if (containsSecret(text)) {
+        return QStringLiteral("\"%1\" contains a password or a secret: give the user the exact command with a "
+                              "<placeholder> to type.").arg(maskSecrets(text).left(80));
+    }
+    return {};
+}
+
 const QString &instructions() {
     static const QString text = QStringLiteral(
-        "FastShell is the user's terminal (serial consoles, SSH, Telnet). Workflow: list_sessions, then read_output "
-        "(new_only=true to follow a console cheaply). Run show and configuration commands with run_commands, many "
-        "in one call (it stops at the first error). When the CLI syntax is unknown (FS KT-NOS, FSOS, Cisco...), use "
-        "help with a partial command instead of guessing. Use filter to keep long outputs short. Verify a change "
-        "by reading the configuration back, and save it only when the user wants. Passwords are never shown and "
-        "never typed by Claude: write the exact commands with <placeholders> for the user, and when the device "
-        "asks for a password call wait_for_user. Ask the user before disruptive changes (reload, erase, shutting "
-        "the uplink or management interface). To send a file (firmware) from the PC to a device, use file_server.");
+        "FastShell is the user's terminal (serial consoles, SSH, Telnet) for network and system administration.\n"
+        "Work like a careful senior network engineer:\n"
+        "1. Context: call notes (action=read) and list_sessions first; open what you need with open_session or, "
+        "for several devices, open_sessions (side by side).\n"
+        "2. Inspect before acting: read_output, then show commands. To look at several devices, use "
+        "run_on_sessions once instead of one call per device, and compare the results (versions, VLANs, "
+        "neighbours, errors). When the CLI syntax is unknown (FS KT-NOS, FSOS, Cisco...), use help with a partial "
+        "command instead of guessing. Use filter to keep long outputs short.\n"
+        "3. Plan: before changing anything, tell the user the plan in a few lines (which devices, which commands, "
+        "in which order, how to roll back). Change the devices farthest from you first and never cut the link "
+        "you are connected through (uplink, management VLAN/interface). Ask before disruptive changes (reload, "
+        "erase, shutdown of uplinks).\n"
+        "4. Apply with run_commands or run_on_sessions (it stops at the first error), then verify by reading the "
+        "configuration and the state back on every device touched. Save only when the user wants.\n"
+        "5. Remember: add short useful facts with notes (action=add): device roles, topology, quirks, changes.\n"
+        "Passwords are never shown and never typed by Claude: write the exact commands with <placeholders> for "
+        "the user. When a device asks to log in, call vault_login if list_sessions shows vault=\"...\" for it "
+        "(FastShell types the saved account), otherwise wait_for_user. To send a file (firmware) from the "
+        "PC to a device, use file_server.");
     return text;
 }
 
@@ -378,6 +440,7 @@ void Protocol::callTool(const QString &name, const QJsonObject &args, const Done
             QString line = QStringLiteral("%1 %2 \"%3\" access=%4").arg(s.id).arg(s.kind, s.title, accessName(s.access));
             if (!s.running) line += QStringLiteral(" DISCONNECTED");
             if (!prompt.isEmpty()) line += QStringLiteral(" prompt=\"%1\"").arg(prompt.left(80));
+            if (!s.vault.isEmpty()) line += QStringLiteral(" vault=\"%1\"").arg(s.vault);
             if (isPasswordPrompt(prompt)) line += QStringLiteral(" WAITING_FOR_PASSWORD");
             out << line;
         }
@@ -406,6 +469,40 @@ void Protocol::callTool(const QString &name, const QJsonObject &args, const Done
         return;
     }
 
+    if (name == QLatin1String("open_sessions")) {
+        QStringList names;
+        for (const QJsonValue &v : args.value(QStringLiteral("names")).toArray()) {
+            const QString n = v.toString().trimmed();
+            if (!n.isEmpty() && !names.contains(n, Qt::CaseInsensitive)) names << n;
+        }
+        if (names.isEmpty() || names.size() > MaxOpenAtOnce) {
+            return done(toolError(QStringLiteral("Give between 1 and %1 saved session names.").arg(MaxOpenAtOnce)));
+        }
+        const bool sideBySide = args.value(QStringLiteral("side_by_side")).toBool(true);
+        m_host->openSavedMany(names, sideBySide, [done, names](const QList<int> &ids, const QString &error) {
+            QStringList lines;
+            bool any = false;
+            for (qsizetype i = 0; i < names.size(); ++i) {
+                const int id = i < ids.size() ? ids.at(i) : 0;
+                any = any || id > 0;
+                lines << (id > 0 ? QStringLiteral("\"%1\": session %2").arg(names.at(i)).arg(id)
+                                 : QStringLiteral("\"%1\": not opened").arg(names.at(i)));
+            }
+            if (!any) return done(toolError(error.isEmpty() ? lines.join(QLatin1Char('\n')) : error));
+            QString out = lines.join(QLatin1Char('\n'));
+            if (!error.isEmpty()) out += QLatin1Char('\n') + error;
+            done(toolText(out + QStringLiteral("\nFollow the logins with read_output new_only=true, or run_on_sessions.")));
+        });
+        return;
+    }
+    if (name == QLatin1String("run_on_sessions")) {
+        runOnSessions(args, done);
+        return;
+    }
+    if (name == QLatin1String("notes")) {
+        notesTool(args, done);
+        return;
+    }
     if (name == QLatin1String("file_server")) {
         const QString action = args.value(QStringLiteral("action")).toString();
         static const QStringList actions{QStringLiteral("status"), QStringLiteral("start"), QStringLiteral("stop"), QStringLiteral("wait")};
@@ -452,6 +549,29 @@ void Protocol::callTool(const QString &name, const QJsonObject &args, const Done
         return;
     }
 
+    if (name == QLatin1String("vault_login")) {
+        if (!info->running) return done(toolError(QStringLiteral("This session is disconnected.")));
+        if (info->access == Access::ReadOnly) {
+            return done(toolError(QStringLiteral("This session is read only for Claude.")));
+        }
+        if (info->vault.isEmpty()) {
+            return done(toolError(QStringLiteral("No vault account Claude may use is linked to this session: call "
+                                                 "wait_for_user so that the user logs in.")));
+        }
+        auto go = [this, session, done](bool ok) {
+            if (!ok) return done(toolError(QStringLiteral("The user refused.")));
+            m_host->vaultLogin(session, [done](const QString &message, bool error) {
+                done(error ? toolError(message) : toolText(message));
+            });
+        };
+        if (info->access == Access::Ask) {
+            m_host->approve(session, QStringLiteral("[Log in with the vault account \"%1\"]").arg(info->vault), go);
+        } else {
+            go(true);
+        }
+        return;
+    }
+
     const bool writes = name == QLatin1String("send_line") || name == QLatin1String("run_commands") ||
                         name == QLatin1String("send_keys") || name == QLatin1String("help") ||
                         name == QLatin1String("wait_for_user");
@@ -486,15 +606,7 @@ void Protocol::callTool(const QString &name, const QJsonObject &args, const Done
     const bool password = atPasswordPrompt(session);
     const double defaultWait = name == QLatin1String("send_keys") ? 1 : 10;
     const int waitMs = int(std::clamp(args.value(QStringLiteral("wait_seconds")).toDouble(defaultWait), 0.0, 120.0) * 1000);
-    auto checkLine = [&](const QString &text) -> QString {
-        if (text.size() > MaxLineLength) return QStringLiteral("Command too long.");
-        if (hasControl(text)) return QStringLiteral("One line per command, without control characters.");
-        if (containsSecret(text)) {
-            return QStringLiteral("\"%1\" contains a password or a secret: give the user the exact command with a "
-                                  "<placeholder> to type.").arg(maskSecrets(text).left(80));
-        }
-        return {};
-    };
+    const auto checkLine = commandError;
     const QString passwordError = QStringLiteral("The device is asking for a password: call wait_for_user.");
 
     if (name == QLatin1String("help")) {
@@ -572,6 +684,130 @@ void Protocol::callTool(const QString &name, const QJsonObject &args, const Done
     };
     if (info->access == Access::Ask) m_host->approve(session, commands.join(QLatin1Char('\n')), go);
     else go(true);
+}
+
+void Protocol::runOnSessions(const QJsonObject &args, const Done &done) {
+    QList<int> ids;
+    for (const QJsonValue &v : args.value(QStringLiteral("sessions")).toArray()) {
+        const int id = v.toInt(-1);
+        if (!ids.contains(id)) ids << id;
+    }
+    if (ids.isEmpty() || ids.size() > MaxSessionsAtOnce) {
+        return done(toolError(QStringLiteral("Give between 1 and %1 session ids.").arg(MaxSessionsAtOnce)));
+    }
+    QStringList commands;
+    for (const QJsonValue &v : args.value(QStringLiteral("commands")).toArray()) commands << v.toString();
+    if (commands.isEmpty() || commands.size() > MaxCommands) {
+        return done(toolError(QStringLiteral("Give between 1 and %1 commands.").arg(MaxCommands)));
+    }
+    for (const QString &c : commands) {
+        if (const QString e = commandError(c); !e.isEmpty()) return done(toolError(e));
+    }
+    Format format;
+    format.filter = args.value(QStringLiteral("filter")).toString();
+    if (!format.filter.isEmpty() && !QRegularExpression(format.filter).isValid()) {
+        return done(toolError(QStringLiteral("Invalid filter regex.")));
+    }
+    // Each terminal gets its share of the output budget.
+    format.maxChars = std::max(2000, 24000 / int(ids.size()));
+    const bool stopOnError = args.value(QStringLiteral("stop_on_error")).toBool(true);
+    const int waitMs = int(std::clamp(args.value(QStringLiteral("wait_seconds")).toDouble(10), 0.0, 120.0) * 1000);
+
+    const QList<SessionInfo> all = m_host->sessions();
+    QList<int> ask;
+    QStringList titles;
+    for (int id : ids) {
+        const auto info = std::find_if(all.cbegin(), all.cend(), [id](const SessionInfo &s) { return s.id == id; });
+        if (info == all.cend() || info->access == Access::Hidden) {
+            return done(toolError(QStringLiteral("Unknown session %1: call list_sessions.").arg(id)));
+        }
+        if (!info->running) return done(toolError(QStringLiteral("Session %1 is disconnected.").arg(id)));
+        if (info->access == Access::ReadOnly) {
+            return done(toolError(QStringLiteral("Session %1 is read only for Claude.").arg(id)));
+        }
+        if (atPasswordPrompt(id)) {
+            return done(toolError(QStringLiteral("Session %1 is asking for a password: call wait_for_user.").arg(id)));
+        }
+        if (info->access == Access::Ask) ask << id;
+        titles << QStringLiteral("%1 \"%2\"").arg(id).arg(info->title);
+    }
+
+    auto go = [this, ids, titles, commands, waitMs, stopOnError, format, done](bool ok) {
+        if (!ok) return done(toolError(QStringLiteral("The user refused.")));
+        auto results = std::make_shared<QStringList>();
+        results->resize(ids.size());
+        auto left = std::make_shared<int>(int(ids.size()));
+        for (qsizetype i = 0; i < ids.size(); ++i) {
+            runCommands(ids.at(i), commands, 0, waitMs, stopOnError, format, QString(),
+                        [i, titles, results, left, done](const QJsonObject &r) {
+                            const QString text = r.value(QStringLiteral("content")).toArray().at(0).toObject()
+                                                     .value(QStringLiteral("text")).toString();
+                            (*results)[i] = QStringLiteral("=== %1%2 ===\n%3")
+                                                .arg(titles.at(i), r.value(QStringLiteral("isError")).toBool()
+                                                                       ? QStringLiteral(" (error)") : QString(),
+                                                     text.trimmed());
+                            if (--*left == 0) done(toolText(results->join(QStringLiteral("\n\n"))));
+                        });
+        }
+    };
+    if (ask.isEmpty()) {
+        go(true);
+    } else {
+        QStringList askTitles;
+        for (int id : ask) askTitles << titles.at(ids.indexOf(id));
+        m_host->approveMany(ask, QStringLiteral("On %1:\n%2").arg(askTitles.join(QStringLiteral(", ")),
+                                                                  commands.join(QLatin1Char('\n'))), go);
+    }
+}
+
+void Protocol::notesTool(const QJsonObject &args, const Done &done) {
+    const QString action = args.value(QStringLiteral("action")).toString();
+    QStringList lines = m_host->notes().split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    if (action == QLatin1String("read")) {
+        if (lines.isEmpty()) return done(toolText(QStringLiteral("[No notes yet.]")));
+        QStringList numbered;
+        for (qsizetype i = 0; i < lines.size(); ++i) numbered << QStringLiteral("%1. %2").arg(i + 1).arg(maskSecrets(lines.at(i)));
+        return done(toolText(numbered.join(QLatin1Char('\n'))));
+    }
+    if (action == QLatin1String("add")) {
+        const QString text = args.value(QStringLiteral("text")).toString().simplified();
+        if (text.isEmpty()) return done(toolError(QStringLiteral("Give the text to add.")));
+        if (text.size() > MaxLineLength || hasControl(text)) return done(toolError(QStringLiteral("One short line.")));
+        if (containsSecret(text)) return done(toolError(QStringLiteral("Notes never hold passwords or secrets.")));
+        lines << QStringLiteral("%1  %2").arg(QDate::currentDate().toString(Qt::ISODate), text);
+        while (lines.join(QLatin1Char('\n')).size() > MaxNotesChars && lines.size() > 1) lines.removeFirst();
+        if (!m_host->setNotes(lines.join(QLatin1Char('\n')) + QLatin1Char('\n'))) {
+            return done(toolError(QStringLiteral("Notes are not available.")));
+        }
+        return done(toolText(QStringLiteral("Added as line %1.").arg(lines.size())));
+    }
+    if (action == QLatin1String("remove")) {
+        const int line = args.value(QStringLiteral("line")).toInt(0);
+        if (line < 1 || line > lines.size()) return done(toolError(QStringLiteral("No line %1: call notes action=read.").arg(line)));
+        const QString removed = lines.takeAt(line - 1);
+        if (!m_host->setNotes(lines.isEmpty() ? QString() : lines.join(QLatin1Char('\n')) + QLatin1Char('\n'))) {
+            return done(toolError(QStringLiteral("Notes are not available.")));
+        }
+        return done(toolText(QStringLiteral("Removed: %1").arg(maskSecrets(removed))));
+    }
+    done(toolError(QStringLiteral("action must be read, add or remove.")));
+}
+
+namespace {
+void openNext(Host *host, const QStringList &names, const std::shared_ptr<QList<int>> &ids,
+              const std::function<void(const QList<int> &, const QString &)> &done) {
+    if (ids->size() >= names.size()) return done(*ids, QString());
+    host->openSaved(names.at(ids->size()), [host, names, ids, done](int id, const QString &) {
+        *ids << std::max(0, id);
+        openNext(host, names, ids, done);
+    });
+}
+}  // namespace
+
+void Host::openSavedMany(const QStringList &names, bool /*sideBySide*/,
+                         std::function<void(const QList<int> &, const QString &)> done) {
+    // One after the other with openSaved (each may ask the user).
+    openNext(this, names, std::make_shared<QList<int>>(), done);
 }
 
 void Protocol::runCommands(int session, QStringList commands, int index, int waitMs, bool stopOnError, Format format,
@@ -677,7 +913,38 @@ Parse parseHttp(QByteArray &buffer, HttpRequest &out) {
         if (colon <= 0) return Parse::Bad;
         request.headers.insert(l.left(colon).trimmed().toLower(), l.mid(colon + 1).trimmed());
     }
-    if (request.headers.contains("transfer-encoding")) return Parse::Bad;  // chunked: not needed
+    const QByteArray encoding = request.headers.value("transfer-encoding").toLower();
+    if (!encoding.isEmpty()) {
+        // Chunked body (some proxies forward requests this way).
+        if (encoding != "chunked" || request.headers.contains("content-length")) return Parse::Bad;
+        QByteArray body;
+        qsizetype pos = end + 4;
+        for (;;) {
+            const qsizetype lineEnd = buffer.indexOf("\r\n", pos);
+            if (lineEnd < 0) return buffer.size() - pos > 32 ? Parse::Bad : Parse::Incomplete;
+            QByteArray sizeText = buffer.mid(pos, lineEnd - pos);
+            if (const qsizetype semi = sizeText.indexOf(';'); semi >= 0) sizeText.truncate(semi);
+            bool ok = false;
+            const qint64 chunk = sizeText.trimmed().toLongLong(&ok, 16);
+            if (!ok || chunk < 0 || body.size() + chunk > MaxBody) return Parse::Bad;
+            pos = lineEnd + 2;
+            if (chunk == 0) {
+                // No trailers expected: the empty line ends the request.
+                if (buffer.size() < pos + 2) return Parse::Incomplete;
+                if (buffer.mid(pos, 2) != "\r\n") return Parse::Bad;
+                pos += 2;
+                break;
+            }
+            if (buffer.size() < pos + chunk + 2) return Parse::Incomplete;
+            body += buffer.mid(pos, chunk);
+            if (buffer.mid(pos + chunk, 2) != "\r\n") return Parse::Bad;
+            pos += chunk + 2;
+        }
+        request.body = std::move(body);
+        buffer.remove(0, pos);
+        out = std::move(request);
+        return Parse::Complete;
+    }
     bool ok = true;
     const QByteArray lengthText = request.headers.value("content-length", "0");
     const qint64 length = lengthText.toLongLong(&ok);
@@ -689,22 +956,35 @@ Parse parseHttp(QByteArray &buffer, HttpRequest &out) {
     return Parse::Complete;
 }
 
-int checkHttp(const HttpRequest &request, const QByteArray &token, quint16 port) {
+namespace {
+bool sameSecret(const QByteArray &given, const QByteArray &expected) {
+    if (expected.isEmpty() || given.size() != expected.size()) return false;
+    unsigned char diff = 0;  // constant time
+    for (qsizetype i = 0; i < given.size(); ++i) diff |= static_cast<unsigned char>(given.at(i) ^ expected.at(i));
+    return diff == 0;
+}
+}  // namespace
+
+int checkHttp(const HttpRequest &request, const QByteArray &token, quint16 port, const QByteArray &remoteSecret) {
     QByteArray path = request.path;
     if (const qsizetype q = path.indexOf('?'); q >= 0) path.truncate(q);
-    if (path != "/mcp") return 404;
-    // A web page cannot reach the server: browsers always send Origin, and a
-    // rebound DNS name shows in Host.
-    if (request.headers.contains("origin")) return 403;
+    const bool remote = path.startsWith("/mcp/");
+    if (path != "/mcp" && !remote) return 404;
+    // The Host must be local: a rebound DNS name shows there. The tunnel
+    // rewrites it to 127.0.0.1:<port> (cloudflared --http-host-header).
     const QByteArray host = request.headers.value("host");
     const QByteArray p = QByteArray::number(port);
     if (host != "127.0.0.1:" + p && host != "localhost:" + p) return 403;
-    const QByteArray expected = "Bearer " + token;
-    const QByteArray given = request.headers.value("authorization");
-    if (token.isEmpty() || given.size() != expected.size()) return 401;
-    unsigned char diff = 0;  // constant time
-    for (qsizetype i = 0; i < given.size(); ++i) diff |= static_cast<unsigned char>(given.at(i) ^ expected.at(i));
-    return diff == 0 ? 0 : 401;
+    if (remote) {
+        if (!sameSecret(path.mid(5), remoteSecret)) return 404;  // do not tell a wrong secret from no page
+        // Claude's servers send no Origin; a web page always does.
+        const QByteArray origin = request.headers.value("origin");
+        if (!origin.isEmpty() && origin != "https://claude.ai" && origin != "https://claude.com") return 403;
+        return 0;
+    }
+    // A web page cannot reach the local endpoint: browsers always send Origin.
+    if (request.headers.contains("origin")) return 403;
+    return sameSecret(request.headers.value("authorization"), "Bearer " + token) && !token.isEmpty() ? 0 : 401;
 }
 
 QByteArray httpResponse(int status, const QByteArray &body, const QByteArray &contentType) {

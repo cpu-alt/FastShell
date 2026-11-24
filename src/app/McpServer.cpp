@@ -63,7 +63,7 @@ void McpServer::process(QTcpSocket *socket) {
         return;
     }
     auto answer = [socket](int status, const QByteArray &body) { socket->write(mcp::httpResponse(status, body)); };
-    if (const int status = mcp::checkHttp(request, m_token, m_port); status != 0) {
+    if (const int status = mcp::checkHttp(request, m_token, m_port, m_remoteSecret); status != 0) {
         answer(status, {});
         socket->disconnectFromHost();
         return;

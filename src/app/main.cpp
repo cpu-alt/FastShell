@@ -12,6 +12,7 @@
 #include "app/EditorWindow.h"
 #include "app/Logo.h"
 #include "app/MainWindow.h"
+#include "app/McpStdioBridge.h"
 #include "app/Style.h"
 
 namespace {
@@ -68,9 +69,37 @@ void migrateFromOldNames() {
     }
 }
 
+// "--mcp-stdio [--data-dir DIR]": bridge for the Claude desktop app, without
+// any window (see McpStdioBridge.h).
+int runStdioBridge(int argc, char *argv[]) {
+    QCoreApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(QStringLiteral("EMF NET"));
+    QCoreApplication::setApplicationName(QStringLiteral("FastShell"));
+    const QStringList args = QCoreApplication::arguments();
+    for (qsizetype i = 1; i < args.size(); ++i) {
+        QString dir;
+        if (args.at(i) == QLatin1String("--data-dir") && i + 1 < args.size()) {
+            dir = args.at(i + 1);
+        } else if (args.at(i).startsWith(QLatin1String("--data-dir="))) {
+            dir = args.at(i).mid(11);
+        }
+        if (!dir.isEmpty()) {
+            QSettings::setDefaultFormat(QSettings::IniFormat);
+            QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, QDir(dir).absolutePath());
+        }
+    }
+    QSettings settings;
+    const int port = settings.value(QStringLiteral("claude/port"), 47821).toInt();
+    const QByteArray token = settings.value(QStringLiteral("claude/token")).toByteArray();
+    return mcp::runStdioBridge(port > 1024 && port < 65536 ? quint16(port) : quint16(47821), token);
+}
+
 }  // namespace
 
 int main(int argc, char *argv[]) {
+    for (int i = 1; i < argc; ++i) {
+        if (qstrcmp(argv[i], "--mcp-stdio") == 0) return runStdioBridge(argc, argv);
+    }
     QApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
     QApplication app(argc, argv);
     QApplication::setOrganizationName(QStringLiteral("EMF NET"));

@@ -55,11 +55,17 @@ qt_add_executable(fastshell WIN32 MACOSX_BUNDLE
     app/DropPreview.h app/DropPreview.cpp
     app/RdpView.h app/RdpView.cpp
     app/Style.h app/Style.cpp
+    app/Fun.h app/Fun.cpp
     app/UpdateCheck.h app/UpdateCheck.cpp
     app/McpProtocol.h app/McpProtocol.cpp
     app/McpServer.h app/McpServer.cpp
+    app/McpStdioBridge.h app/McpStdioBridge.cpp
+    app/CloudTunnel.h app/CloudTunnel.cpp
     app/MainWindowClaude.cpp
     app/MainWindowFiles.cpp
+    app/MainWindowVault.cpp
+    app/Vault.h app/Vault.cpp
+    app/VaultPanel.h app/VaultPanel.cpp
     app/FileServerDialog.h app/FileServerDialog.cpp
     app/Updater.h app/Updater.cpp
     app/Icons.h

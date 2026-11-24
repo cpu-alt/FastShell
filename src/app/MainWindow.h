@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QHash>
+#include <QSet>
 #include <QMainWindow>
 #include <QPointer>
 
@@ -25,6 +26,12 @@ class TabPage;
 class TerminalView;
 class TransferPanel;
 class Updater;
+class VaultPanel;
+class CloudTunnel;
+namespace vault {
+class Store;
+struct Entry;
+}
 
 class McpServer;
 
@@ -90,8 +97,14 @@ private:
     void createClaude();
     void setClaudeEnabled(bool on);
     void showClaudeConnection();
+    void showClaudeSetup();  // one window for the three ways to connect Claude
     void addClaudeAccessMenu(QMenu *menu, TerminalView *view);
     void updateClaudeIndicator();
+    // Cloud access: a cloudflared tunnel to /mcp/<secret> for Claude on claude.ai.
+    void setCloudEnabled(bool on);
+    void showCloudConnection();
+    // Claude app on this PC: adds FastShell to its configuration (stdio bridge).
+    void connectClaudeDesktop();
     mcp::Access claudeAccess(TerminalView *view) const;
     int claudeId(TerminalView *view) const;
     TerminalView *claudeView(int id) const;
@@ -104,6 +117,30 @@ private:
     QList<mcp::SavedSession> savedSessions() const override;
     void openSaved(const QString &name, std::function<void(int, const QString &)> done) override;
     void fileServer(const QString &action, const QJsonObject &args, std::function<void(const QString &, bool)> done) override;
+    void openSavedMany(const QStringList &names, bool sideBySide,
+                       std::function<void(const QList<int> &, const QString &)> done) override;
+    void approveMany(const QList<int> &ids, const QString &what, std::function<void(bool)> done) override;
+    void vaultLogin(int id, std::function<void(const QString &, bool)> done) override;
+    QString notes() const override;
+    bool setNotes(const QString &text) override;
+    void showClaudeNotes();
+
+    // Password vault (MainWindowVault.cpp): a click logs in the current pane.
+    void createVault();
+    void vaultLogin(const QString &id);  // the user clicked an account
+    // Ctrl+Shift+L: logs the current pane in with its linked account, else
+    // shows the Vault panel to pick one.
+    void vaultLoginCurrent();
+    // Types the account at the prompt of view (then the password when it is
+    // asked). Error message, or empty once typed.
+    QString typeVaultLogin(TerminalView *view, const QString &entryId);
+    const vault::Entry *vaultEntryFor(TerminalView *view, bool claudeOnly) const;
+    // Hides the vault passwords typed in view from what Claude reads (in case
+    // a password went to a prompt that echoes it).
+    QStringList maskVaultPasswords(const TerminalView *view, QStringList lines) const;
+    vault::Store *m_vault = nullptr;
+    QHash<const TerminalView *, QSet<QString>> m_vaultTyped;  // pane -> entry ids typed there
+    VaultPanel *m_vaultPanel = nullptr;
 
     // Built-in TFTP / HTTP file server (MainWindowFiles.cpp).
     void createFileServer();
@@ -116,6 +153,8 @@ private:
     QAction *m_claudeOpenAction = nullptr;
     McpServer *m_mcp = nullptr;
     QAction *m_claudeAction = nullptr;
+    QAction *m_cloudAction = nullptr;
+    CloudTunnel *m_tunnel = nullptr;
     QLabel *m_statusClaude = nullptr;
     qint64 m_claudeLastActivity = 0;
     mutable int m_claudeNextId = 0;

@@ -22,14 +22,20 @@ add_executable(fastshell_session_tests
     test_app_security.cpp
     test_editor.cpp
     test_mcp.cpp
+    test_vault.cpp
+    ${PROJECT_SOURCE_DIR}/src/app/Vault.cpp
+    ${PROJECT_SOURCE_DIR}/src/app/Vault.h
     ${PROJECT_SOURCE_DIR}/src/app/McpProtocol.cpp
+    ${PROJECT_SOURCE_DIR}/src/app/McpStdioBridge.cpp
+    ${PROJECT_SOURCE_DIR}/src/app/CloudTunnel.cpp
+    ${PROJECT_SOURCE_DIR}/src/app/CloudTunnel.h
     ${PROJECT_SOURCE_DIR}/src/app/EditorText.cpp
     ${PROJECT_SOURCE_DIR}/src/app/SessionStore.cpp
     ${PROJECT_SOURCE_DIR}/src/app/SessionStore.h
     ${PROJECT_SOURCE_DIR}/src/app/UpdateCheck.cpp
     ${PROJECT_SOURCE_DIR}/src/app/UpdateCheck.h)
 target_include_directories(fastshell_session_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
-target_link_libraries(fastshell_session_tests PRIVATE fscore Qt6::Gui GTest::gtest GTest::gtest_main)
+target_link_libraries(fastshell_session_tests PRIVATE fscore Qt6::Gui Qt6::Network GTest::gtest GTest::gtest_main)
 if(WIN32)
     target_link_libraries(fastshell_session_tests PRIVATE crypt32)
 endif()

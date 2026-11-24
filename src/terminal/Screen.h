@@ -76,7 +76,7 @@ public:
     std::int64_t screenTopLine() const;      // absolute number of screen row 0
     std::int64_t historySize() const { return screenTopLine() - firstLine(); }
     const Line *line(std::int64_t absolute) const;
-    const Line &screenLine(int row) const { return (*m_lines)[row]; }
+    const Line &screenLine(int row) const { return (*m_lines)[ringIndex(row)]; }
 
     // Text between two positions (inclusive, row-major), soft wraps joined.
     std::u32string text(std::int64_t fromLine, int fromColumn, std::int64_t toLine, int toColumn) const;
@@ -142,6 +142,12 @@ private:
     void restoreCursor();
     void resetTabs();
     void fitLine(Line &line) const;
+    std::size_t ringIndex(int row) const {
+        const int i = row + m_ring;
+        return std::size_t(i >= m_rows ? i - m_rows : i);
+    }
+    Line &row(int r) { return (*m_lines)[ringIndex(r)]; }
+    void normalizeRing();
 
     VtParser m_parser;
     int m_rows;
@@ -150,6 +156,10 @@ private:
     std::vector<Line> m_main;
     std::vector<Line> m_alt;
     std::vector<Line> *m_lines = &m_main;
+    // The current screen is a ring: row r is (*m_lines)[(r + m_ring) % m_rows],
+    // so scrolling the whole screen moves an offset instead of every line.
+    // normalizeRing() puts row 0 back first before code that edits the vector.
+    int m_ring = 0;
     CircularBuffer<Line> m_history;
 
     Cursor m_cursor;

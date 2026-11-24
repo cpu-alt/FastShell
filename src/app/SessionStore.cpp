@@ -210,6 +210,13 @@ constexpr int MaxImportIterations = 10000000;
 
 }  // namespace
 
+QByteArray protectSecret(const QString &secret) {
+    return secret.isEmpty() ? QByteArray() : protect(secret.toUtf8()).toBase64();
+}
+
+QString unprotectSecret(const QByteArray &blob) {
+    return blob.isEmpty() ? QString() : QString::fromUtf8(unprotect(QByteArray::fromBase64(blob)));
+}
 
 QString SessionInfo::password() const {
     return protectedPassword.isEmpty() ? QString()
@@ -352,11 +359,13 @@ void SessionStore::setDataDirectory(const QString &directory) {
     dataDirectoryOverride() = directory;
 }
 
+QString SessionStore::dataDirectory() {
+    return dataDirectoryOverride().isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                                             : dataDirectoryOverride();
+}
+
 QString SessionStore::filePath() const {
-    const QString dir = dataDirectoryOverride().isEmpty()
-                            ? QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
-                            : dataDirectoryOverride();
-    return dir + QStringLiteral("/sessions.json");
+    return dataDirectory() + QStringLiteral("/sessions.json");
 }
 
 const SessionInfo *SessionStore::find(const QString &id) const {
@@ -688,6 +697,7 @@ void SessionStore::renameFolder(const QString &from, const QString &to) {
     for (SessionInfo &s : m_sessions) rebase(s.folder);
     m_folders.removeDuplicates();
     save();
+    Q_EMIT folderRenamed(a, b);
 }
 
 void SessionStore::removeFolder(const QString &folder) {

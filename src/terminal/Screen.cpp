@@ -44,6 +44,7 @@ void Screen::reset() {
     m_mouseMode = MouseMode::Off;
     m_cursorShape = CursorShape::Block;
     m_lines = &m_main;
+    m_ring = 0;
     m_main.assign(m_rows, blankLine());
     m_alt.assign(m_rows, blankLine());
     m_scrollTop = 0;
@@ -101,7 +102,7 @@ const Line *Screen::line(std::int64_t absolute) const {
     const std::int64_t top = screenTopLine();
     if (absolute >= top) {
         const std::int64_t row = absolute - top;
-        return row < m_rows ? &(*m_lines)[std::size_t(row)] : nullptr;
+        return row < m_rows ? &(*m_lines)[ringIndex(int(row))] : nullptr;
     }
     return (!altScreen() && m_history.contains(absolute)) ? &m_history.at(absolute) : nullptr;
 }
@@ -145,6 +146,7 @@ void Screen::resize(int rows, int columns) {
         return;
     }
 
+    normalizeRing();
     m_columns = columns;
     for (auto *lines : {&m_main, &m_alt}) {
         for (Line &l : *lines) {
@@ -202,12 +204,14 @@ void Screen::resize(int rows, int columns) {
 
 void Screen::print(const char32_t *text, std::size_t length) {
     const bool simple = !m_insertMode && !(m_cursor.shiftOut ? m_cursor.lineDrawingG1 : m_cursor.lineDrawingG0);
+    Line *current = nullptr;  // line of the cursor, looked up again after putChar()
     for (std::size_t i = 0; i < length; ++i) {
         const char32_t ch = text[i];
         // Fast path for the common case: narrow character, no pending wrap,
         // not touching a wide character. Same result as putChar().
         if (simple && ch >= 0x20 && ch < 0x300 && !m_cursor.pendingWrap) {
-            Line &line = (*m_lines)[m_cursor.row];
+            if (!current) current = &row(m_cursor.row);
+            Line &line = *current;
             Cell &cell = line.cells[m_cursor.column];
             if (!(cell.attrs & (AttrWide | AttrWideTrail))) {
                 if (!line.time) line.time = m_now;
@@ -223,6 +227,7 @@ void Screen::print(const char32_t *text, std::size_t length) {
             }
         }
         putChar(ch);
+        current = nullptr;
     }
     touch();
 }
@@ -240,7 +245,7 @@ void Screen::putChar(char32_t ch) {
 
     if (m_cursor.pendingWrap) {
         if (m_autoWrap) {
-            (*m_lines)[m_cursor.row].wrapped = true;
+            row(m_cursor.row).wrapped = true;
             carriageReturn();
             index();
         }
@@ -252,7 +257,7 @@ void Screen::putChar(char32_t ch) {
             return;
         }
         eraseCells(m_cursor.row, m_cursor.column, m_cursor.column);
-        (*m_lines)[m_cursor.row].wrapped = true;
+        row(m_cursor.row).wrapped = true;
         carriageReturn();
         index();
     }
@@ -261,7 +266,7 @@ void Screen::putChar(char32_t ch) {
         insertChars(width);
     }
 
-    Line &line = (*m_lines)[m_cursor.row];
+    Line &line = row(m_cursor.row);
     Cell &cell = line.cells[m_cursor.column];
     if (!line.time) {
         line.time = m_now;
@@ -330,11 +335,10 @@ void Screen::scrollUp(int top, int bottom, int count) {
     if (count <= 0) {
         return;
     }
-    auto &lines = *m_lines;
     const bool keepHistory = !altScreen() && top == 0;
     const Cell b = blank();
     for (int i = 0; i < count; ++i) {
-        Line &line = lines[top + i];
+        Line &line = row(top + i);
         if (keepHistory) {
             m_history.append(std::move(line));
         }
@@ -342,9 +346,22 @@ void Screen::scrollUp(int top, int bottom, int count) {
         line.wrapped = false;
         line.time = 0;
     }
-    // Moves Line objects (cheap vector swaps), never copies cell data.
-    std::rotate(lines.begin() + top, lines.begin() + top + count, lines.begin() + bottom + 1);
+    if (top == 0 && bottom == m_rows - 1) {
+        // Whole screen: the cleared lines become the bottom ones.
+        m_ring = int(ringIndex(count == m_rows ? 0 : count));
+    } else {
+        normalizeRing();
+        auto &lines = *m_lines;
+        std::rotate(lines.begin() + top, lines.begin() + top + count, lines.begin() + bottom + 1);
+    }
     touch();
+}
+
+void Screen::normalizeRing() {
+    if (m_ring != 0) {
+        std::rotate(m_lines->begin(), m_lines->begin() + m_ring, m_lines->end());
+        m_ring = 0;
+    }
 }
 
 void Screen::scrollDown(int top, int bottom, int count) {
@@ -352,6 +369,7 @@ void Screen::scrollDown(int top, int bottom, int count) {
     if (count <= 0) {
         return;
     }
+    normalizeRing();
     auto &lines = *m_lines;
     std::rotate(lines.begin() + top, lines.begin() + bottom + 1 - count, lines.begin() + bottom + 1);
     for (int i = 0; i < count; ++i) {
@@ -385,6 +403,7 @@ void Screen::switchScreen(bool alternate, bool save, bool clear) {
     if (alternate == altScreen()) {
         return;
     }
+    normalizeRing();
     if (alternate) {
         if (save) {
             m_savedMain = m_cursor;
@@ -411,7 +430,7 @@ void Screen::switchScreen(bool alternate, bool save, bool clear) {
 // --- erasing / editing -----------------------------------------------------------
 
 void Screen::eraseCells(int row, int from, int to) {
-    auto &cells = (*m_lines)[row].cells;
+    auto &cells = this->row(row).cells;
     from = std::max(0, from);
     to = std::min(to, m_columns - 1);
     const Cell b = blank();
@@ -433,12 +452,12 @@ void Screen::eraseInDisplay(int mode) {
     case 0:
         eraseCells(m_cursor.row, m_cursor.column, m_columns - 1);
         for (int r = m_cursor.row + 1; r < m_rows; ++r) {
-            (*m_lines)[r] = blankLine();
+            row(r) = blankLine();
         }
         break;
     case 1:
         for (int r = 0; r < m_cursor.row; ++r) {
-            (*m_lines)[r] = blankLine();
+            row(r) = blankLine();
         }
         eraseCells(m_cursor.row, 0, m_cursor.column);
         break;
@@ -461,12 +480,12 @@ void Screen::eraseInLine(int mode) {
     case 2: eraseCells(m_cursor.row, 0, m_columns - 1); break;
     }
     if (mode != 1) {
-        (*m_lines)[m_cursor.row].wrapped = false;
+        row(m_cursor.row).wrapped = false;
     }
 }
 
 void Screen::insertChars(int count) {
-    auto &cells = (*m_lines)[m_cursor.row].cells;
+    auto &cells = row(m_cursor.row).cells;
     count = std::min(count, m_columns - m_cursor.column);
     std::move_backward(cells.begin() + m_cursor.column, cells.end() - count, cells.end());
     std::fill(cells.begin() + m_cursor.column, cells.begin() + m_cursor.column + count, blank());
@@ -475,7 +494,7 @@ void Screen::insertChars(int count) {
 }
 
 void Screen::deleteChars(int count) {
-    auto &cells = (*m_lines)[m_cursor.row].cells;
+    auto &cells = row(m_cursor.row).cells;
     count = std::min(count, m_columns - m_cursor.column);
     std::move(cells.begin() + m_cursor.column + count, cells.end(), cells.begin() + m_cursor.column);
     std::fill(cells.end() - count, cells.end(), blank());
@@ -493,6 +512,7 @@ void Screen::insertLines(int count) {
 void Screen::deleteLines(int count) {
     if (m_cursor.row >= m_scrollTop && m_cursor.row <= m_scrollBottom) {
         // Deleted lines never go to history, even at the top of the screen.
+        normalizeRing();
         auto &lines = *m_lines;
         const int bottom = m_scrollBottom;
         count = std::min(count, bottom - m_cursor.row + 1);

@@ -164,8 +164,12 @@ Claude Code peut lire les consoles ouvertes et y taper des commandes, au lieu de
 entre les deux. C'est un serveur MCP local intégré à FastShell (HTTP sur `127.0.0.1:47821`
 seulement), **désactivé par défaut**.
 
-1. Menu **Claude → Let Claude Code use the terminals** (coché = actif, retenu au redémarrage).
-2. **Claude → Connect Claude Code…** → **Copy command**, puis coller la commande une seule fois
+Le plus simple : **Claude → Connect Claude…** (ou clic sur « Claude » dans la barre d'état). La
+fenêtre active Claude et propose les trois façons de l'utiliser, un bouton chacune : Claude Code,
+l'app Claude du PC, Claude sur claude.ai.
+
+1. Menu **Claude → Let Claude use the terminals** (coché = actif, retenu au redémarrage).
+2. Claude Code : **Connect Claude… → Show the command…** → **Copy command**, puis coller la commande une seule fois
    dans un terminal où Claude Code est installé :
    `claude mcp add --transport http --scope user fastshell http://127.0.0.1:47821/mcp --header "Authorization: Bearer <clé>"`.
    Relancer Claude Code : `/mcp` doit montrer `fastshell`. Variante par projet : copier
@@ -184,6 +188,14 @@ Outils donnés à Claude :
 | `send_keys` | touches sans Entrée (Ctrl+C, Tab, flèches…) |
 | `wait_for_user` | invite de mot de passe : FastShell montre la console, fait clignoter la barre des tâches, et Claude attend que vous ayez tapé |
 | `list_saved_sessions`, `open_session` | ouvrir une session enregistrée (FastShell se connecte avec les identifiants enregistrés ; Claude ne les voit pas) |
+| `open_sessions` | ouvrir plusieurs sessions d'un coup (une seule confirmation), côte à côte dans un onglet |
+| `run_on_sessions` | les mêmes commandes sur plusieurs terminaux **en parallèle**, résultats groupés par terminal (comparer, appliquer partout) ; une seule confirmation pour les panneaux *Ask* |
+| `vault_login` | à une invite de login, FastShell tape le compte du coffre lié à la session, si vous l'autorisez (Claude ne voit rien) |
+| `notes` | carnet de Claude, gardé d'une conversation à l'autre : rôles des équipements, topologie, particularités, changements. Lisible et modifiable dans **Claude → Claude's notes…** |
+
+Claude suit une méthode : lire ses notes et l'état des équipements, comparer, proposer un plan
+(ordre, retour arrière, jamais couper le lien par lequel il est connecté), appliquer, vérifier
+partout, puis noter ce qu'il a appris.
 
 Pour économiser les tokens, les sorties sont compactées : sans la commande répétée, sans les
 lignes `!`, sans lignes vides en série, avec le prompt une seule fois par lot, filtrables par une
@@ -209,6 +221,61 @@ Sécurité :
 - **Serveur de fichiers** : l'outil `file_server` permet à Claude de démarrer le serveur TFTP
   (vous confirmez toujours, avec le dossier affiché), de lister les fichiers et de suivre le
   transfert (`wait`). Il ne peut pas l'arrêter pendant un transfert.
+
+### Avec l'app Claude sur le PC
+
+**Claude → Connect the Claude app on this PC…** ajoute FastShell aux outils de l'app Claude
+(fichier `%APPDATA%\Claude\claude_desktop_config.json`, une copie `.bak` est gardée). L'app lance
+`FastShell.exe --mcp-stdio`, un petit relais vers le FastShell ouvert : aucune clé n'est écrite
+dans le fichier de Claude. Quitter complètement l'app Claude (icône près de l'horloge → Quit) et
+la relancer. FastShell doit rester ouvert, avec Claude activé.
+
+### Avec Claude sur claude.ai (cloud)
+
+Pour Claude sur le web ou dans les projets claude.ai, FastShell ouvre un tunnel HTTPS
+(cloudflared, gratuit, sans compte Cloudflare) vers son serveur local.
+
+1. Installer cloudflared une fois : `winget install --id Cloudflare.cloudflared`.
+2. **Claude → Cloud access for claude.ai** (ou *Connect Claude… → Set up cloud access…*). Après quelques secondes,
+   FastShell affiche une adresse `https://….trycloudflare.com/mcp/<secret>` (**Copy address**).
+3. Dans claude.ai : **Paramètres → Connecteurs → Ajouter un connecteur personnalisé**, nom
+   `FastShell`, coller l'adresse, sans réglage OAuth. Activer le connecteur dans la conversation
+   ou le projet.
+
+À savoir :
+- L'adresse **est un mot de passe** : la fin (`/mcp/<secret>`) ne change qu'avec
+  Claude → New connection key ; le début change à chaque ouverture du tunnel (relance de
+  FastShell) : mettre alors à jour l'adresse du connecteur.
+- Mêmes règles qu'en local : panneaux partagés seulement, jamais de mot de passe, les panneaux
+  *Ask* attendent votre accord sur le PC. Sans le secret exact, le serveur répond « 404 ».
+- Le tunnel se ferme avec FastShell ou en décochant l'option ; la barre d'état affiche
+  « + cloud » tant qu'il est ouvert.
+
+## Coffre à mots de passe (Vault)
+
+Panneau **Vault** (à côté de *Outline*, ou l'icône clé de la barre d'outils) : une petite liste de comptes (nom,
+utilisateur, mot de passe, note), à part des sessions, dans `vault.json` du dossier de données.
+Les mots de passe sont chiffrés par Windows (DPAPI), comme ceux des sessions.
+
+- **+** ou clic droit → *Add an account…* pour ajouter ; clic droit → *Edit…*, *Delete*.
+- **Un clic sur un compte** quand le terminal demande `login as:` / `Username:` tape
+  l'utilisateur, puis le mot de passe dès que `Password:` apparaît. À une invite de mot de passe,
+  il tape seulement le mot de passe. Sans invite, rien n'est tapé (message dans la barre d'état).
+- **Ctrl+Shift+L** (Session → *Log in with the vault*) : tape le compte lié à la session courante,
+  sans ouvrir le panneau. Sans compte lié, le panneau Vault s'affiche pour en choisir un.
+- Clic droit → *Copy password* : copié pour 30 secondes, puis le presse-papiers est vidé.
+- L'œil dans le champ *Password* (fenêtre *Edit…*) affiche le mot de passe.
+- Petites animations : un cadenas s'ouvre sur le terminal quand le coffre tape le mot de passe,
+  des confettis saluent chaque nouveau compte, et le coffre vide montre un coffre-fort dont la
+  molette tourne au survol (un clic ajoute un compte). View → *Animations* les coupe.
+- **Used for** (dans *Edit…*) : cocher les dossiers de sessions (sous-dossiers compris) ou les
+  sessions qui utilisent ce compte. Les comptes de la session ouverte passent en tête, en gras.
+- **Claude may log in with this account** : Claude peut alors demander à FastShell de taper ce
+  compte (`vault_login`) à l'invite de login des sessions liées ; il ne voit ni l'utilisateur ni
+  le mot de passe. Les comptes autorisés portent la mention [Claude]. Sans cette case, Claude
+  vous demande de taper le mot de passe.
+- Un mot de passe tapé depuis le coffre est remplacé par `********` dans tout ce que Claude lit de
+  ce terminal, même si l'équipement le réaffiche.
 
 ## Serveur de fichiers (TFTP / HTTP)
 

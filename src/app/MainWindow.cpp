@@ -40,10 +40,12 @@
 #include "app/Panels.h"
 #include "app/RdpView.h"
 #include "app/SessionPanel.h"
+#include "app/Fun.h"
 #include "app/Style.h"
 #include "app/TabPage.h"
 #include "app/TerminalView.h"
 #include "app/Updater.h"
+#include "app/VaultPanel.h"
 #include "net/SftpClient.h"
 #include "net/SshBackend.h"
 #include "net/SerialBackend.h"
@@ -238,6 +240,11 @@ void MainWindow::createDocks() {
     QDockWidget *outlineDock = addPanel(tr("Outline"), QStringLiteral("outlineDock"), m_outline, Qt::RightDockWidgetArea);
     splitDockWidget(sessionDock, outlineDock, Qt::Vertical);
 
+    createVault();
+    QDockWidget *vaultDock = addPanel(tr("Vault"), QStringLiteral("vaultDock"), m_vaultPanel, Qt::RightDockWidgetArea);
+    tabifyDockWidget(outlineDock, vaultDock);
+    outlineDock->raise();
+
     m_filer = new FilerPanel(this);
     m_filerDock = addPanel(tr("Filer"), QStringLiteral("filerDock"), m_filer, Qt::LeftDockWidgetArea);
     connect(m_filerDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
@@ -304,6 +311,7 @@ void MainWindow::createMenus() {
     add(session, tr("Duplicate tab"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D), [this] {
         if (TerminalView *v = current()) openSession(m_sessions.value(v));
     });
+    add(session, tr("Log in with the vault"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_L), [this] { vaultLoginCurrent(); });
     session->addSeparator();
     add(session, tr("Close pane"), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_W), [this] { closePane(); });
     add(session, tr("Close tab"), QKeySequence(), [this] { closeTab(m_tabs->currentIndex()); });
@@ -505,7 +513,8 @@ void MainWindow::createToolBar() {
     bar->addSeparator();
     const std::pair<const char *, style::Glyph> panels[] = {{"sessionDock", style::Glyph::SessionList},
                                                             {"filerDock", style::Glyph::Filer},
-                                                            {"outlineDock", style::Glyph::Outline}};
+                                                            {"outlineDock", style::Glyph::Outline},
+                                                            {"vaultDock", style::Glyph::Vault}};
     for (const auto &[name, glyph] : panels) {
         if (auto *dock = findChild<QDockWidget *>(QLatin1String(name))) {
             viewAction(dock->toggleViewAction(), glyph, tr("Show or hide the %1 panel").arg(dock->windowTitle()));
@@ -730,6 +739,7 @@ TerminalView *MainWindow::createView(const SessionInfo &session, const QString &
     connect(view, &QObject::destroyed, this, [this, view] {
         m_sessions.remove(view);
         m_sftp.remove(view);
+        m_vaultTyped.remove(view);
     });
     connect(view, &TerminalView::titleChanged, this, [this, view] {
         if (TabPage *page = pageOf(view); page && page->activeView() == view) refreshTabTitle(page);
@@ -998,6 +1008,10 @@ SftpClient *MainWindow::sftpFor(TerminalView *view) {
 void MainWindow::updatePanels() {
     TerminalView *view = current();
     m_outline->setView(view);
+    if (m_vaultPanel) {
+        const SessionInfo info = view ? m_sessions.value(view) : SessionInfo{};
+        m_vaultPanel->setCurrentSession(info.id, info.folder);
+    }
     if (!m_filerDock->isVisible()) return;  // no SFTP connection unless the Filer is shown
 
     const SessionInfo s = view ? m_sessions.value(view) : SessionInfo{};
@@ -1171,6 +1185,10 @@ void MainWindow::showPaneMenu(TerminalView *view, const QPoint &globalPos, int c
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
     if (watched == m_tabs->tabBar() && tabBarDragEvent(event)) return true;
     if (fileServerClicked(watched, event)) return true;
+    if (watched == m_statusClaude && event->type() == QEvent::MouseButtonRelease) {
+        showClaudeSetup();
+        return true;
+    }
     return QMainWindow::eventFilter(watched, event);
 }
 
@@ -1276,6 +1294,11 @@ void MainWindow::createThemeMenu(QMenu *view) {
     glow->setCheckable(true);
     glow->setChecked(style::glow());
     connect(glow, &QAction::toggled, this, [](bool on) { style::setGlow(on); });
+    QAction *animations = menu->addAction(tr("Animations"));
+    animations->setToolTip(tr("Small animations: the padlock of the vault, confetti..."));
+    animations->setCheckable(true);
+    animations->setChecked(fun::enabled());
+    connect(animations, &QAction::toggled, this, [](bool on) { fun::setEnabled(on); });
     connect(style::notifier(), &style::Notifier::changed, this, &MainWindow::refreshThemeIcons);
 }
 

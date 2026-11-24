@@ -84,6 +84,11 @@ struct DeviceProfile {
     bool builtin = false;
 };
 
+// Encrypts a secret for the current Windows user (DPAPI, base64), and back.
+// Empty on failure, and always empty on platforms without a key store.
+QByteArray protectSecret(const QString &secret);
+QString unprotectSecret(const QByteArray &blob);
+
 class SessionStore : public QObject {
     Q_OBJECT
 
@@ -140,9 +145,12 @@ public:
     QString filePath() const;
     // Portable mode (--data-dir): sessions in this folder instead of %APPDATA%.
     static void setDataDirectory(const QString &directory);
+    // Folder holding sessions.json (and vault.json): --data-dir or %APPDATA%.
+    static QString dataDirectory();
 
 Q_SIGNALS:
     void changed();
+    void folderRenamed(const QString &from, const QString &to);
 
 private:
     void load();

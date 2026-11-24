@@ -48,6 +48,7 @@ struct SessionInfo {
     QString kind;  // "serial", "ssh", "telnet", "local"
     bool running = false;
     Access access = Access::Ask;
+    QString vault;  // vault account Claude may log in with here (name), or empty
 };
 
 struct SavedSession {
@@ -107,6 +108,26 @@ public:
     virtual void openSaved(const QString &name, std::function<void(int, const QString &)> done) {
         done(-1, QStringLiteral("Opening sessions is not available."));
     }
+    // Opens several saved sessions with one confirmation, in tabs or side by
+    // side in one tab. done(ids, error): one id per name, in order (0 = not opened).
+    virtual void openSavedMany(const QStringList &names, bool sideBySide,
+                               std::function<void(const QList<int> &, const QString &)> done);
+    // One confirmation for commands sent to several "ask" panes. Default: asks
+    // in the first one.
+    virtual void approveMany(const QList<int> &ids, const QString &what, std::function<void(bool)> done) {
+        if (ids.isEmpty()) return done(true);
+        approve(ids.first(), what, std::move(done));
+    }
+    // Logs the pane in with its linked vault account (only one the user lets
+    // Claude use): FastShell types the user and password, Claude never sees
+    // them. done(message, error).
+    virtual void vaultLogin(int /*id*/, std::function<void(const QString &, bool)> done) {
+        done(QStringLiteral("The vault is not available."), true);
+    }
+    // Claude's notes: what it learnt about this network (device roles, CLI
+    // quirks...), kept across sessions, readable by the user. Plain text.
+    virtual QString notes() const { return {}; }
+    virtual bool setNotes(const QString & /*text*/) { return false; }
     // Built-in TFTP / HTTP file server: action "status", "start", "stop" or "wait"
     // (args: folder, timeout_seconds). done(text, error).
     virtual void fileServer(const QString & /*action*/, const QJsonObject & /*args*/,
@@ -141,6 +162,8 @@ private:
     void runCommands(int session, QStringList commands, int index, int waitMs, bool stopOnError, Format format,
                      QString result, const Done &done);
     bool atPasswordPrompt(int session) const;
+    void runOnSessions(const QJsonObject &args, const Done &done);
+    void notesTool(const QJsonObject &args, const Done &done);
 
     Host *m_host;
     std::unique_ptr<QObject> m_context;  // timers die with the protocol
@@ -160,7 +183,12 @@ enum class Parse { Incomplete, Complete, Bad };
 Parse parseHttp(QByteArray &buffer, HttpRequest &out);
 // 0 if the request may go on, else the HTTP status to answer: 404 (other
 // path), 403 (browser Origin or Host not local: DNS rebinding), 401 (token).
-int checkHttp(const HttpRequest &request, const QByteArray &token, quint16 port);
+// Local clients POST to /mcp with "Authorization: Bearer <token>". When
+// remoteSecret is set (cloud access on), /mcp/<remoteSecret> is accepted
+// without the header: Claude on claude.ai reaches it through a tunnel
+// (cloudflared), which sets the local Host, and cannot send custom headers.
+int checkHttp(const HttpRequest &request, const QByteArray &token, quint16 port,
+              const QByteArray &remoteSecret = QByteArray());
 QByteArray httpResponse(int status, const QByteArray &body, const QByteArray &contentType = "application/json");
 
 QByteArray newToken();  // 64 hex characters

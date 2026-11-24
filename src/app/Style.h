@@ -57,7 +57,7 @@ Notifier *notifier();
 // Line icons drawn at runtime for the toolbar, in the current theme colours.
 enum class Glyph {
     NewSession, Terminal, SplitRight, SplitDown, Broadcast, RemoteDesktop, Panels, Close,
-    ZoomIn, ZoomOut, Font, Clock, LineNumbers, SessionList, Filer, Outline, FullScreen,
+    ZoomIn, ZoomOut, Font, Clock, LineNumbers, SessionList, Filer, Outline, FullScreen, Vault, Eye,
 };
 QIcon icon(Glyph glyph);
 

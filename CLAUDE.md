@@ -32,7 +32,7 @@ cmake --build build                                        # doit finir sans war
 - Le benchmark de l'analyseur doit rester vers ~100 Mio/s (le test exige seulement > 20).
 - Paquets MSYS2 : gcc, cmake, ninja, qt6-base, qt6-serialport, qt6-activeqt (RDP dans les
   onglets, `FASTSHELL_HAVE_AXRDP`, lié en statique), libssh (0.12), openssl, gtest.
-- Version : `VERSION` dans `CMakeLists.txt` (1.0.4), injectée dans l'exe (`assets/fastshell.rc.in`).
+- Version : `VERSION` dans `CMakeLists.txt` (1.1.0), injectée dans l'exe (`assets/fastshell.rc.in`).
 
 ## Livrer dans `dist/`
 
@@ -70,10 +70,12 @@ src/widgets/   ScrollBar, Splitter, PopupWidget
 src/app/       MainWindow, TabPage, TerminalView, SessionStore (JSON + DPAPI, import/export),
                SessionPanel, SessionDialog, ManageDialogs, FilerPanel, Panels, Logo.h, Icons.h,
                EditorWindow (éditeur type Bloc-notes, local ou SFTP en mémoire), EditorText (testé),
-               Style (QSS, icônes, chevrons générés), DropPreview, RdpView, TextSafety.h
+               Style (QSS, icônes, chevrons générés), Fun (animations), DropPreview, RdpView, TextSafety.h
                (titres, collage, noms de fichiers SFTP), UpdateCheck, Updater, main.cpp,
                McpProtocol (Claude Code : outils MCP, règles mots de passe, HTTP ; testé),
-               McpServer (127.0.0.1), MainWindowClaude (menu Claude, accès par panneau),
+               McpServer (127.0.0.1), MainWindowClaude (menu Claude, accès par panneau, cloud,
+               app Claude), CloudTunnel (cloudflared), McpStdioBridge (`--mcp-stdio`, testé),
+               Vault (coffre, testé) + VaultPanel + MainWindowVault (clic = login),
                FileServerDialog + MainWindowFiles (Session → File server, outil MCP file_server)
 tests/         GoogleTest (dont test_security, test_app_security, test_update, test_ssh_login)
 tools/         package.sh (paquet de release), make_icon.cpp (assets/fastshell.ico + docs/logo.png)
@@ -109,6 +111,25 @@ Données utilisateur : `%APPDATA%\EMF NET\FastShell\sessions.json` (+ QSettings 
   clé Bearer, accès par panneau (Hidden / Read only / Ask / Full), jamais d'envoi pendant une
   invite de mot de passe, secrets masqués. Tester avec sa propre instance portable
   (`claude/port` différent dans le `.ini`) et `curl` ou `claude -p --mcp-config`.
+- **Claude dans le cloud** : Claude → *Let Claude on claude.ai use the terminals* lance
+  `cloudflared tunnel --url http://127.0.0.1:PORT --http-host-header 127.0.0.1:PORT` (quick
+  tunnel, sans compte) ; seul `/mcp/<claude/remoteSecret>` répond sans clé Bearer (connecteur
+  personnalisé claude.ai). **App Claude locale** : `FastShell.exe --mcp-stdio` (relais stdio →
+  HTTP local), ajouté à `%APPDATA%\Claude\claude_desktop_config.json` par le menu Claude.
+  Tester le tunnel avec un faux `cloudflared` dans le PATH qui affiche une adresse.
+- **Coffre (Vault)** : `vault.json` (DPAPI), panneau à droite ; un clic tape l'utilisateur à
+  `login as:` / `Username:` puis le mot de passe à `Password:` (`vault::promptKind`). Comptes liés
+  à des dossiers / sessions (`Store::forSession` : lien direct, puis dossier le plus profond).
+  Case « Claude may log in » → outil MCP `vault_login` : FastShell tape, Claude ne voit rien.
+  Les mots de passe tapés sont masqués dans ce que Claude lit (`maskVaultPasswords`). Ctrl+Shift+L =
+  compte lié à la session courante. Test de bout en bout possible sous Linux : session locale qui
+  lance un faux script `login as:` / `password:`, puis `open_session` + `vault_login` par curl.
+- **Animations** (`Fun.*`) : cadenas qui s'ouvre (`fun::unlock`), confettis (`fun::confetti`),
+  porte de coffre-fort dessinée (`fun::paintVaultDoor`), en surcouche transparente à la souris ;
+  View → Animations (`appearance/animations`). Couleurs via `style::current()`.
+- **Claude multi-terminaux** : `open_sessions` (côte à côte), `run_on_sessions` (parallèle, une
+  confirmation via `Host::approveMany`), `notes` (`claude-notes.txt` du dossier de données,
+  menu Claude → Claude's notes). Méthode de travail dans `instructions()` (McpProtocol.cpp).
 - **RDP** : déplaçable dans un panneau (clic droit sur l'onglet → Move to a panel).
 - **Logo** : hexagone en tuile 3D avec `>` et curseur. Après modification de `Logo.h`, relancer
   `tools/make_icon assets/fastshell.ico docs/logo.png`.
@@ -126,6 +147,10 @@ Données utilisateur : `%APPDATA%\EMF NET\FastShell\sessions.json` (+ QSettings 
 - **QSS** : les sous-contrôles (flèches de combo/spinbox, défilement des onglets) doivent être
   stylés explicitement, sinon Qt dessine des blocs carrés qui dépassent des coins arrondis.
 - **Historique** : anneau arrondi à la puissance de 2 supérieure (100 → 128 lignes).
+- **Écran en anneau** (`Screen::m_ring`) : un défilement de tout l'écran déplace un décalage ;
+  toujours passer par `row(r)` / `ringIndex()`, et appeler `normalizeRing()` avant de modifier
+  le vecteur de lignes (resize, écran alternatif, insert/delete lines, zone de défilement).
+  Recycler les lignes de l'historique (swap) a été **plus lent** (mémoire froide) : abandonné.
 - **Contrôle RDP (ActiveX)** : ses événements (OnConnected, OnDisconnected...) n'arrivent jamais à Qt ;
   `RdpView::pollState` lit la propriété `Connected` toutes les 500 ms. Le contrôle doit être visible
   pendant la connexion (sinon ses fenêtres d'identifiants / certificat restent cachées).

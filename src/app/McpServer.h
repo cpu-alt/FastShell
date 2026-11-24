@@ -24,6 +24,8 @@ public:
     bool isListening() const;
     quint16 port() const { return m_port; }
     void setToken(const QByteArray &token) { m_token = token; }
+    // Cloud access: also accept /mcp/<secret> (see mcp::checkHttp). Empty = off.
+    void setRemoteSecret(const QByteArray &secret) { m_remoteSecret = secret; }
 
 private:
     void onConnection();
@@ -32,5 +34,6 @@ private:
     mcp::Protocol m_protocol;
     QTcpServer *m_server;
     QByteArray m_token;
+    QByteArray m_remoteSecret;
     quint16 m_port = 0;
 };

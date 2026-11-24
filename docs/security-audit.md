@@ -72,3 +72,16 @@ Retour à la [politique de sécurité](../SECURITY.md).
 - **Les releases ne sont pas signées** (Authenticode) : Windows SmartScreen peut afficher un
   avertissement au premier lancement. Une signature de code serait la prochaine étape.
 - **Pas d'analyse automatique de mémoire** (sanitizers) : MinGW ne fournit pas ASan sous Windows.
+- **Accès cloud pour Claude (claude.ai)** : désactivé par défaut. Une fois activé, toute
+  personne qui connaît l'adresse complète du tunnel (`…/mcp/<secret>`, 256 bits aléatoires) peut
+  utiliser les panneaux partagés avec Claude, selon leur niveau d'accès. Garder l'adresse
+  secrète, préférer *Ask before each command*, et changer le secret avec Claude → New connection
+  key en cas de doute. Le trafic passe par Cloudflare (HTTPS). Si FastShell se ferme brutalement,
+  `cloudflared` peut rester lancé, mais il ne mène plus à rien.
+- **Coffre (Vault)** : mêmes protections que les sessions (DPAPI). Le mot de passe est tapé
+  seulement si la dernière ligne du terminal ressemble à une invite de mot de passe ; un
+  équipement malveillant peut afficher une fausse invite pour le recevoir, comme avec une saisie
+  manuelle. Un mot de passe tapé depuis le coffre est masqué dans tout ce que Claude lit de ce
+  terminal (s'il fait 4 caractères ou plus) : Claude ne peut pas le récupérer en le faisant
+  réafficher tel quel. Une commande qui le transformerait (inversé, encodé) avant de l'afficher
+  n'est pas détectée : n'autoriser Claude que sur les comptes et les panneaux voulus.

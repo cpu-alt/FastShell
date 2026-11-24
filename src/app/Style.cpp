@@ -284,9 +284,9 @@ QPushButton:default:hover, QPushButton#accentButton:hover { background: @accentH
 QPushButton:disabled { color: @muted; background: @panel; }
 
 QCheckBox, QRadioButton, QLabel { color: @text; background: transparent; }
-QCheckBox::indicator { width: 15px; height: 15px; border: 1px solid @borderHover; border-radius: 4px; background: @surface; }
-QCheckBox::indicator:hover { border-color: @accent; }
-QCheckBox::indicator:checked { background: @accent; border-color: @accent; image: url(@checkImage); }
+QCheckBox::indicator, QTreeView::indicator, QListView::indicator { width: 15px; height: 15px; border: 1px solid @borderHover; border-radius: 4px; background: @surface; }
+QCheckBox::indicator:hover, QTreeView::indicator:hover, QListView::indicator:hover { border-color: @accent; }
+QCheckBox::indicator:checked, QTreeView::indicator:checked, QListView::indicator:checked { background: @accent; border-color: @accent; image: url(@checkImage); }
 
 QScrollBar:vertical { background: transparent; width: 11px; margin: 2px 1px 2px 0; }
 QScrollBar:horizontal { background: transparent; height: 11px; margin: 0 2px 1px 2px; }
@@ -626,6 +626,24 @@ QIcon icon(Glyph glyph) {
         p.drawPolyline(QPolygonF({QPointF(14, 32), QPointF(7, 32), QPointF(7, 25)}));
         accentPen();
         p.drawRoundedRect(QRectF(14, 15, 12, 10), 2, 2);
+        break;
+    case Glyph::Vault:  // a key: a ring and a toothed blade
+        p.drawEllipse(QPointF(13, 20), 6, 6);
+        p.drawLine(QPointF(19, 20), QPointF(34, 20));
+        accentPen();
+        p.drawLine(QPointF(28, 20), QPointF(28, 26));
+        p.drawLine(QPointF(33, 20), QPointF(33, 25));
+        break;
+    case Glyph::Eye:  // show the password
+        p.drawPath([] {
+            QPainterPath eye;
+            eye.moveTo(5, 20);
+            eye.quadTo(20, 6, 35, 20);
+            eye.quadTo(20, 34, 5, 20);
+            return eye;
+        }());
+        accentPen();
+        p.drawEllipse(QPointF(20, 20), 4, 4);
         break;
     }
     p.end();
